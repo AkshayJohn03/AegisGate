@@ -15,13 +15,24 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install
-        run: pip install -e .
+        run: pip install -e ".[auth]" && pip install coverage ruff -q
       - name: Lint
-        run: pip install ruff -q && python -m ruff check src tests
+        run: python -m ruff check src tests scripts
       - name: Tests (offline)
-        run: python -m pytest tests -q
-      - name: Dependency audit
+        run: coverage run -m pytest tests -q
+      - name: Coverage gate
+        run: coverage report --fail-under=70
+      - name: Dependency audit (blocking)
         run: |
           pip install pip-audit -q
-          pip-audit || true
-        continue-on-error: true
+          pip-audit --skip-editable
+      - name: SBOM
+        run: |
+          pip install cyclonedx-bom -q
+          cyclonedx-py requirements --only-direct -o sbom.json || true
+      - name: Load profile artifact
+        run: python scripts/load_profile.py --vus 20 --seconds 5 --out load_profile_ci.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: load-profile
+          path: load_profile_ci.json

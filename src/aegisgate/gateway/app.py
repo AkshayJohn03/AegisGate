@@ -39,7 +39,10 @@ def build_pipeline(
     span_sink: Any = None,
     log_sink: Any = None,
 ) -> GatewayPipeline:
+    from aegisgate.clock import SystemClock
+
     settings = settings or AegisGateSettings()
+    clock = clock or SystemClock()  # never pass None into the dataclass default
     registry = ModelRegistry.load(settings.registry_path)
     if settings.llm_mode == "openai":
         client = OpenAICompatClient(
@@ -59,22 +62,20 @@ def build_pipeline(
     )
 
 
-def _tenant_from_headers(request: Request, settings: AegisGateSettings) -> str:
+def _tenant_from_headers(request: Request, settings: AegisGateSettings,
+                         auth_provider: Any) -> str:
+    """Resolve the tenant via the configured AuthProvider (static hashed keys
+    or JWT). Kept as a function so tests can drive it directly."""
     auth = request.headers.get("authorization", "")
     if not auth.lower().startswith("bearer ") or not auth[7:].strip():
         raise PermissionError("missing bearer token")
     token = auth[7:].strip()
-    if not settings.tenant_tokens:
-        return token  # token doubles as tenant id
-    mapping: dict[str, str] = {}
-    for pair in settings.tenant_tokens.split(","):
-        if ":" in pair:
-            tok, tenant = pair.split(":", 1)
-            mapping[tok.strip()] = tenant.strip()
-    tenant = mapping.get(token)
-    if tenant is None:
-        raise PermissionError("unknown token")
-    return tenant
+    if not settings.tenant_tokens and auth_provider is None:
+        return token  # dev mode: token doubles as tenant id
+    identity = auth_provider.resolve(token) if auth_provider else None
+    if identity is None:
+        raise PermissionError("unknown or expired credentials")
+    return identity.tenant_id
 
 
 def _parse_chat_body(body: dict[str, Any]) -> ChatRequest:
@@ -193,9 +194,49 @@ def create_app(
     settings: AegisGateSettings | None = None,
     pipeline: GatewayPipeline | None = None,
 ) -> FastAPI:
+    import hashlib
+    import hmac
+    import os
+    import uuid
+
+    from aegisgate.auth import StaticTokenProvider, build_auth_provider
+    from aegisgate.meter_store import SQLiteMeterStore
+
     settings = settings or AegisGateSettings()
     owned_pipeline = pipeline is None
     pipeline = pipeline or build_pipeline(settings)
+
+    if os.environ.get("AEGISGATE_AUTH_MODE", "static") == "jwt":
+        auth_provider = build_auth_provider()  # JWT mode is env-configured by design
+    else:
+        auth_provider = StaticTokenProvider(
+            raw_pairs=settings.tenant_tokens,
+            previous_raw_pairs=os.environ.get("AEGISGATE_TENANT_TOKENS_PREVIOUS", ""),
+        )
+
+    # durable ledger: opt-in via AEGISGATE_LEDGER_PATH; when unset the meter
+    # stays in-memory (single-process deployments)
+    ledger_path = os.environ.get("AEGISGATE_LEDGER_PATH", "")
+    if ledger_path and pipeline.meter is not None:
+        pipeline.meter.store = SQLiteMeterStore(ledger_path)
+        if pipeline.meter.clock is not None:  # clock may be unset when a pipeline is injected
+            pipeline.meter._hydrate_from_store()
+
+    admin_secret = os.environ.get("AEGISGATE_ADMIN_TOKEN", "")
+    admin_token_hash = hashlib.sha256(admin_secret.encode()).hexdigest()
+
+    def _require_admin(request: Request) -> JSONResponse | None:
+        if not admin_secret:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "admin API disabled (set AEGISGATE_ADMIN_TOKEN)"},
+            )
+        supplied = hashlib.sha256(
+            request.headers.get("x-admin-token", "").encode()
+        ).hexdigest()
+        if not hmac.compare_digest(supplied, admin_token_hash):
+            return JSONResponse(status_code=401, content={"error": "invalid admin token"})
+        return None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -207,10 +248,45 @@ def create_app(
 
     app = FastAPI(title="AegisGate", version=__version__, lifespan=lifespan)
 
+    @app.middleware("http")
+    async def correlation_id(request: Request, call_next):
+        cid = request.headers.get("x-correlation-id") or str(uuid.uuid4())
+        request.state.correlation_id = cid
+        import logging as _logging
+
+        _logging.getLogger("aegisgate.access").info(
+            json.dumps({"correlation_id": cid, "method": request.method,
+                        "path": request.url.path, "event": "request"}),
+        )
+        response = await call_next(request)
+        response.headers["X-Correlation-ID"] = cid
+        return response
+
+    @app.get("/admin/audit")
+    async def admin_audit(request: Request, limit: int = 50):
+        denied = _require_admin(request)
+        if denied:
+            return denied
+        meter = getattr(pipeline, "meter", None)
+        has_store = meter is not None and getattr(meter, "store", None) is not None
+        tail = meter.store.audit_tail(limit) if has_store else []
+        return {"entries": tail}
+
+    @app.delete("/admin/tenants/{tenant_id}")
+    async def admin_delete_tenant(tenant_id: str, request: Request):
+        denied = _require_admin(request)
+        if denied:
+            return denied
+        meter = getattr(pipeline, "meter", None)
+        if meter is None:
+            return JSONResponse(status_code=503, content={"error": "no meter attached"})
+        removed = meter.delete_tenant(tenant_id)  # audited inside
+        return {"tenant_id": tenant_id, "usage_rows_removed": removed}
+
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> Any:
         try:
-            tenant = _tenant_from_headers(request, settings)
+            tenant = _tenant_from_headers(request, settings, auth_provider)
         except PermissionError as exc:
             return JSONResponse(
                 status_code=401,

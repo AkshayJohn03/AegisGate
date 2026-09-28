@@ -13,10 +13,12 @@ import calendar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel
 
 from aegisgate.clock import Clock
+from aegisgate.meter_store import UsageRecord
 from aegisgate.router.registry import ModelRegistry
 
 
@@ -64,11 +66,54 @@ class CostMeter:
     clock: Clock
     default_budget: Budget = field(default_factory=Budget)
     budgets: dict[str, Budget] = field(default_factory=dict)
+    store: Any | None = None  # MeterStore: durable ledger; None = in-memory only
+    admin_actor: str = "system"
 
     def __post_init__(self) -> None:
         # _daily[tenant][day_key][model] = _Totals ; same for months
         self._daily: dict[str, dict[str, dict[str, _Totals]]] = {}
         self._monthly: dict[str, dict[str, dict[str, _Totals]]] = {}
+        if self.store is not None:
+            self._hydrate_from_store()
+
+    def _hydrate_from_store(self) -> None:
+        """Restart safety: rebuild month/day aggregates from the durable
+        ledger so budget enforcement survives process hops."""
+        now = datetime.fromtimestamp(self.clock.now(), tz=UTC)
+        month_key = now.strftime("%Y-%m")
+        for tenant in self.store.list_tenants():
+            for r in self.store.usage_rows(tenant, month_key):
+                day_key = datetime.fromtimestamp(r.ts, tz=UTC).strftime("%Y-%m-%d")
+                d = self._daily.setdefault(tenant, {}).setdefault(day_key, {})
+                d[r.model] = d.get(r.model) or _Totals()
+                d[r.model].add(r.prompt_tokens, r.completion_tokens, r.cost_usd)
+                m = self._monthly.setdefault(tenant, {}).setdefault(month_key, {})
+                m[r.model] = m.get(r.model) or _Totals()
+                m[r.model].add(r.prompt_tokens, r.completion_tokens, r.cost_usd)
+        stored = self.store.get_budget("*default*")
+        if stored:
+            self.default_budget = Budget.model_validate_json(stored)
+
+    def set_budget(self, tenant_id: str, budget: Budget) -> None:
+        """Persist (durable store) and audit a budget change."""
+        self.budgets[tenant_id] = budget
+        if self.store is not None:
+            self.store.set_budget(tenant_id, budget.model_dump_json())
+            self.store.audit(self.admin_actor, "budget.set", tenant_id,
+                             budget.model_dump())
+
+    def delete_tenant(self, tenant_id: str) -> int:
+        """GDPR erasure across memory + durable store. Audited."""
+        removed = 0
+        for table in (self._daily, self._monthly):
+            if tenant_id in table:
+                del table[tenant_id]
+        self.budgets.pop(tenant_id, None)
+        if self.store is not None:
+            removed = self.store.delete_tenant(tenant_id)
+            self.store.audit(self.admin_actor, "tenant.delete", tenant_id,
+                             {"usage_rows_removed": removed})
+        return removed
 
     def budget_for(self, tenant_id: str) -> Budget:
         return self.budgets.get(tenant_id, self.default_budget)
@@ -79,6 +124,12 @@ class CostMeter:
         """Price a usage record against the registry. Returns cost in USD."""
         cost = self.registry.get(model).cost_usd(prompt_tokens, completion_tokens)
         now = datetime.fromtimestamp(self.clock.now(), tz=UTC)
+        if self.store is not None:
+            self.store.append_usage(UsageRecord(
+                ts=now.timestamp(), tenant_id=tenant_id, model=model,
+                prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                cost_usd=cost,
+            ))
         day_key = now.strftime("%Y-%m-%d")
         month_key = now.strftime("%Y-%m")
         day_model = self._daily.setdefault(tenant_id, {}).setdefault(day_key, {})

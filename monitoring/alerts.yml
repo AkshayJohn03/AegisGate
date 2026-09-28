@@ -1,0 +1,37 @@
+# Prometheus alert rules for AegisGate — paste into your prometheus rules.
+# SLO targets (docs/RUNBOOK.md): availability 99.5%, p95 < 800ms. Hard-budget
+# denials are EXPECTED events (not incidents) but must be trended per tenant.
+groups:
+  - name: aegisgate-availability
+    rules:
+      - alert: AegisGateHighErrorRate
+        expr: rate(aegisgate_requests_total{status=~"5.."}[5m]) / rate(aegisgate_requests_total[5m]) > 0.02
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "AegisGate 5xx rate above 2% for 5m (SLO: 99.5% availability)"
+      - alert: AegisGateProviderCircuitOpen
+        expr: aegisgate_breaker_state{state="open"} == 1
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "Circuit open for {{ $labels.provider }} — RUNBOOK.md, section: breaker"
+      - alert: AegisGateP95LatencyBreach
+        expr: histogram_quantile(0.95, rate(aegisgate_request_duration_seconds_bucket[10m])) > 0.8
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "p95 latency above the 800ms SLO target"
+  - name: aegisgate-cost
+    rules:
+      - alert: AegisGateBudgetHardDenials
+        expr: increase(aegisgate_budget_denials_total[1h]) > 0
+        labels: {severity: info}
+        annotations:
+          summary: "Tenant hit hard budget — expected, but confirm with the account owner"
+      - alert: AegisGateCacheHitRateCollapse
+        expr: rate(aegisgate_cache_hits_total[30m]) / rate(aegisgate_cache_lookups_total[30m]) < 0.05
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "Semantic cache hit rate collapsed — check invalidation or traffic-mix shift"

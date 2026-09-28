@@ -1,0 +1,11 @@
+{
+  "vus": 50,
+  "duration_s": 6.03,
+  "requests": 2871,
+  "errors": 0,
+  "throughput_rps": 476.2,
+  "p50_ms": 35.87,
+  "p95_ms": 61.49,
+  "p99_ms": 68.38,
+  "mean_ms": 38.94
+}
