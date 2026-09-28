@@ -94,7 +94,15 @@ class RateLimiter:
             config = self.per_model.get(model, self.default_config)
             bucket = TokenBucket(config, self.clock)
             self.store.put_bucket(key, bucket)
+        else:
+            # external stores serialize state, not the clock: re-inject this
+            # limiter's clock so refill math continues from the persisted
+            # last_refill timestamp
+            bucket.clock = self.clock
         allowed, retry_after = bucket.try_take(cost)
+        # persist the mutated bucket: an external store (Redis) only sees the
+        # state we write back — in-memory stores overwrite with the same object
+        self.store.put_bucket(key, bucket)
         return RateLimitDecision(
             allowed=allowed, key=key, remaining=max(0.0, bucket.tokens), retry_after_s=retry_after
         )
