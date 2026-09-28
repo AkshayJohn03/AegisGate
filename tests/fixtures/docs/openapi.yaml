@@ -1,0 +1,42 @@
+openapi: 3.1.0
+info:
+  title: Widget API
+  version: 1.3.0
+paths:
+  /v1/widgets:
+    get:
+      operationId: listWidgets
+      summary: List widgets.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+    post:
+      operationId: createWidget
+      summary: Create a widget.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                price:
+                  type: number
+  /v1/widgets/{id}:
+    get:
+      operationId: getWidget
+      summary: Fetch one widget by id.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
