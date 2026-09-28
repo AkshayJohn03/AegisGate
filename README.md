@@ -20,6 +20,20 @@ budgeted, observable LLM. It unifies the pieces most teams end up hand-rolling s
 Everything runs **fully offline**: the default `EchoMockClient` is deterministic, tests never touch
 the network, and time is injected — the entire control plane is testable with a manual clock.
 
+## 🟢 New to AI? Read this first
+
+**The problem, in human terms.** Your product calls AI models the way a call centre phones out to experts. Today you ring one expert. When that expert is sick (provider outage), busy (rate limits), or too expensive, your whole product stalls — and at the end of the month nobody can tell you why the bill tripled.
+
+**What this project does.** AegisGate is the switchboard between your product and every AI model. Every request flows through it, and it handles the boring-but-critical jobs automatically:
+
+- **Never down:** if the primary model fails, it retries politely, tries the backup model, and can even "hedge" — phone a second model in parallel and take whoever answers first. A **circuit breaker** stops hammering a dead provider (like not redialling a switched-off phone) and gently probes it later to see if it recovered.
+- **Never overcharged twice:** a **semantic cache** remembers past questions. If a new question means the same thing as an answered one, it replies instantly from memory — saving both latency and money. "Same meaning" is judged by embedding similarity, not exact string match.
+- **Never over budget:** the **cost autopilot** meters every tenant's token usage like a smart electricity meter. Approaching budget? Easy tasks get routed to cheaper models automatically (and the README documents why the policy *lowers a maximum tier* rather than naively raising a minimum one — the intuitive version would burn money faster, not slower).
+- **Never an experiment on everyone:** new models roll out via **feature flags** — 5% of users first, sticky per user, with a big red kill switch and a "shadow mode" that runs the new model quietly alongside and records how it *would* have answered, without ever showing it to a user.
+- **Heals itself:** a health monitor watches error rates (EWMA smoothing, so one blip ≠ panic) and quarantines failing providers; a **DocHealer** bot notices when the API documentation drifts from the actual API and drafts validated doc patches.
+
+**Measured outcomes:** 91 automated tests pass offline in ~1.5 seconds — including the full gateway request lifecycle (streaming, auth, rate-limit rejections), circuit-breaker open→half-open→recovery transitions, cache hits on semantically-identical questions, autopilot downgrades under simulated budget burn, deterministic 5%-rollouts, and the doc-healer detecting and patching real drift. Every stage emits a span for the ForensiQ forensics tool, so when something goes wrong at 2am, the evidence is already on disk.
+
 ## Architecture
 
 ```mermaid
