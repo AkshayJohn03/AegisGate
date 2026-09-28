@@ -1,0 +1,112 @@
+# AegisGate model registry.
+# Prices are USD per 1M tokens (list price, approximate; refresh before prod use).
+# quality_tier: 1 (budget) .. 5 (frontier). family groups models for cache keys.
+version: 1
+models:
+  - id: gpt-4o
+    provider: openai
+    family: gpt-4o
+    price_per_1m_input: 2.50
+    price_per_1m_output: 10.00
+    context_window: 128000
+    capabilities: [chat, tools, vision, json]
+    quality_tier: 5
+
+  - id: gpt-4o-mini
+    provider: openai
+    family: gpt-4o-mini
+    price_per_1m_input: 0.15
+    price_per_1m_output: 0.60
+    context_window: 128000
+    capabilities: [chat, tools, json]
+    quality_tier: 3
+
+  - id: o3-mini
+    provider: openai
+    family: o3
+    price_per_1m_input: 1.10
+    price_per_1m_output: 4.40
+    context_window: 128000
+    capabilities: [chat, reasoning, json]
+    quality_tier: 5
+
+  - id: claude-sonnet-4
+    provider: anthropic
+    family: claude-sonnet
+    price_per_1m_input: 3.00
+    price_per_1m_output: 15.00
+    context_window: 200000
+    capabilities: [chat, tools, vision, long_context]
+    quality_tier: 5
+
+  - id: claude-haiku
+    provider: anthropic
+    family: claude-haiku
+    price_per_1m_input: 0.80
+    price_per_1m_output: 4.00
+    context_window: 200000
+    capabilities: [chat, tools, fast]
+    quality_tier: 3
+
+  - id: gemini-2.0-flash
+    provider: google
+    family: gemini-flash
+    price_per_1m_input: 0.10
+    price_per_1m_output: 0.40
+    context_window: 1000000
+    capabilities: [chat, tools, vision, long_context]
+    quality_tier: 4
+
+  - id: deepseek-chat
+    provider: deepseek
+    family: deepseek-chat
+    price_per_1m_input: 0.27
+    price_per_1m_output: 1.10
+    context_window: 64000
+    capabilities: [chat, code]
+    quality_tier: 4
+
+  - id: llama-3.3-70b
+    provider: together
+    family: llama
+    price_per_1m_input: 0.88
+    price_per_1m_output: 0.88
+    context_window: 128000
+    capabilities: [chat, open_weights]
+    quality_tier: 3
+
+  - id: mistral-large
+    provider: mistral
+    family: mistral-large
+    price_per_1m_input: 2.00
+    price_per_1m_output: 6.00
+    context_window: 128000
+    capabilities: [chat, tools, multilingual]
+    quality_tier: 4
+
+  - id: grok-2
+    provider: xai
+    family: grok
+    price_per_1m_input: 2.00
+    price_per_1m_output: 10.00
+    context_window: 131072
+    capabilities: [chat, tools, realtime]
+    quality_tier: 4
+
+  - id: qwen-max
+    provider: alibaba
+    family: qwen-max
+    price_per_1m_input: 1.60
+    price_per_1m_output: 6.40
+    context_window: 32768
+    capabilities: [chat, tools, multilingual]
+    quality_tier: 4
+
+  - id: nova-pro
+    provider: amazon
+    family: nova
+    price_per_1m_input: 0.80
+    price_per_1m_output: 3.20
+    context_window: 300000
+    capabilities: [chat, tools, long_context]
+    quality_tier: 4
