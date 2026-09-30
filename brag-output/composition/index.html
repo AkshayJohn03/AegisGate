@@ -1,0 +1,1766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, height=1080" />
+<title>AegisGate — the traffic controller for AI (whiteboard lecture)</title>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  @font-face {
+    font-family: "Segoe Print";
+    src: url("assets/fonts/segoepr.ttf") format("truetype");
+    font-weight: 400;
+    font-style: normal;
+  }
+  @font-face {
+    font-family: "Segoe Print";
+    src: url("assets/fonts/segoeprb.ttf") format("truetype");
+    font-weight: 700;
+    font-style: normal;
+  }
+
+  :root {
+    --board: #F8F5EE;
+    --grid: #E8E3D6;
+    --ink: #22303F;
+    --ink78: rgba(34, 48, 63, 0.78);
+    --blue: #2E6FB7;
+    --red: #C43D3D;
+    --green: #357A52;
+    --hl: #F2C94C;
+    --sticky: #FFF6D6;
+    --amber: #C99A2E;
+  }
+
+  html, body { margin: 0; padding: 0; background: var(--board); }
+
+  #root {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--board);
+    background-image:
+      linear-gradient(var(--grid) 1.5px, transparent 1.5px),
+      linear-gradient(90deg, var(--grid) 1.5px, transparent 1.5px);
+    background-size: 48px 48px;
+    color: var(--ink);
+    font-family: "Segoe Print", cursive;
+  }
+
+  .scene { position: absolute; inset: 0; }
+  .scene-inner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 42px 70px 30px 70px;
+    box-sizing: border-box;
+  }
+
+  .head { flex: 0 0 auto; }
+  .kicker {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--blue);
+    margin-bottom: 6px;
+  }
+  .title {
+    font-size: 50px;
+    line-height: 1.12;
+    font-weight: 700;
+    margin: 0;
+    color: var(--ink);
+  }
+  .title .accent { color: var(--blue); }
+  .uline { display: block; width: 620px; height: 16px; margin-top: 4px; }
+  .uline path { fill: none; stroke: var(--blue); stroke-width: 5; stroke-linecap: round; }
+
+  .body-area { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+
+  /* --- whiteboard primitives --- */
+  .sketch {
+    border: 3.5px solid var(--ink);
+    border-radius: 255px 18px 225px 18px / 18px 225px 18px 255px;
+    background: rgba(255, 255, 255, 0.55);
+  }
+  .sketch2 {
+    border: 3.5px solid var(--ink);
+    border-radius: 18px 225px 18px 255px / 255px 18px 255px 18px;
+    background: rgba(255, 255, 255, 0.55);
+  }
+  .sticky {
+    position: relative;
+    background: var(--sticky);
+    border-radius: 6px 16px 8px 14px;
+    padding: 16px 22px 14px 22px;
+    box-shadow: 0 8px 16px rgba(34, 48, 63, 0.14);
+    box-sizing: border-box;
+  }
+  .sticky .pin {
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    margin-left: -8px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 2px 3px rgba(34, 48, 63, 0.35);
+  }
+  .sticky .term { font-size: 25px; font-weight: 700; color: var(--blue); line-height: 1.25; }
+  .sticky .def { font-size: 22px; color: var(--ink); line-height: 1.32; margin-top: 4px; }
+  .sticky.small { padding: 12px 18px 10px 18px; }
+  .sticky.small .term { font-size: 23px; }
+  .sticky.small .def { font-size: 22px; }
+
+  .mini-note { font-size: 22px; color: var(--ink78); line-height: 1.3; }
+  .mono { font-family: monospace; }
+
+  .stamp {
+    position: absolute;
+    border: 5px solid var(--red);
+    color: var(--red);
+    font-weight: 700;
+    border-radius: 12px;
+    padding: 2px 16px;
+    background: rgba(248, 245, 238, 0.88);
+    white-space: nowrap;
+  }
+
+  .hlwrap { position: relative; display: inline-block; }
+  .hlbar {
+    position: absolute;
+    left: -8px; right: -8px; top: 3px; bottom: 3px;
+    background: var(--hl);
+    border-radius: 4px;
+  }
+  .hltext { position: relative; }
+
+  /* ================= Scene 1 ================= */
+  .s1-stage {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 0;
+  }
+  .s1-callers { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  .s1-phones { display: flex; gap: 26px; }
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .phone {
+    width: 76px; height: 112px;
+    border: 3.5px solid var(--ink);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.7);
+    box-sizing: border-box;
+  }
+  .phone .screen {
+    margin: 12px 10px 8px 10px; height: 52px;
+    border: 2.5px solid rgba(34, 48, 63, 0.4);
+    border-radius: 7px;
+  }
+  .phone .speaker { width: 14px; height: 14px; border-radius: 50%; background: var(--green); margin: 2px auto 0 auto; }
+  .phone-label { font-size: 22px; color: var(--ink78); }
+  .s1-callers-label { font-size: 24px; color: var(--ink78); margin-top: 6px; }
+  .s1-wire { width: 300px; height: 320px; flex: 0 0 auto; }
+  .s1-wire path { fill: none; stroke: var(--ink78); stroke-width: 4; stroke-linecap: round; }
+  .desk-wrap { position: relative; }
+  .desk { width: 330px; padding: 26px 24px; box-sizing: border-box; text-align: center; }
+  .desk-name { font-size: 32px; font-weight: 700; }
+  .desk-sub { font-size: 22px; color: var(--ink78); margin-top: 8px; line-height: 1.3; }
+  .s1-sick { top: -34px; right: -46px; font-size: 40px; }
+  .s1-bill {
+    position: absolute;
+    bottom: -66px; right: -10px;
+    background: rgba(255, 255, 255, 0.85);
+    border: 3px solid var(--red);
+    color: var(--red);
+    font-size: 24px;
+    font-weight: 700;
+    padding: 8px 16px;
+    border-radius: 6px 14px 6px 14px;
+  }
+  .s1-sticky-row { flex: 0 0 auto; display: flex; justify-content: center; padding-bottom: 6px; }
+  .s1-sticky { width: 880px; }
+
+  /* ================= Scene 2 ================= */
+  .s2-top { display: flex; justify-content: flex-end; padding: 2px 6px 10px 0; }
+  .s2-tenant { width: 470px; }
+  .s2-pipe-wrap { flex: 0 0 auto; position: relative; padding-bottom: 64px; }
+  .s2-pipe { display: flex; align-items: center; justify-content: space-between; width: 1760px; margin: 0 auto; }
+  .pipe-group { display: flex; align-items: center; }
+  .pipe-box {
+    min-width: 200px;
+    text-align: center;
+    padding: 22px 12px;
+    font-size: 27px;
+    font-weight: 700;
+    box-sizing: border-box;
+  }
+  .conn { width: 62px; height: 26px; margin: 0 4px; }
+  .conn path { fill: none; stroke: var(--ink78); stroke-width: 4; stroke-linecap: round; }
+  .s2-rail {
+    position: absolute;
+    left: 90px; right: 90px; bottom: 26px;
+    border-top: 3px dashed rgba(34, 48, 63, 0.4);
+  }
+  .s2-dot {
+    position: absolute;
+    left: 84px; bottom: -4px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .s2-dot .bead { width: 22px; height: 22px; border-radius: 50%; background: var(--blue); }
+  .s2-dot .bead-label { font-size: 22px; color: var(--blue); font-weight: 700; white-space: nowrap; }
+  .s2-bottom { flex: 1 1 auto; display: flex; gap: 42px; align-items: flex-start; padding-top: 26px; min-height: 0; }
+  .term-card {
+    background: var(--ink);
+    color: #EDF2F7;
+    border-radius: 16px;
+    padding: 22px 28px;
+    font-family: monospace;
+    font-size: 22px;
+    line-height: 1.75;
+    box-shadow: 0 10px 22px rgba(34, 48, 63, 0.25);
+    flex: 0 0 990px;
+    box-sizing: border-box;
+  }
+  .term-card .ln { white-space: nowrap; }
+  .resp-card {
+    background: rgba(255, 255, 255, 0.75);
+    border: 3px solid var(--ink);
+    border-radius: 6px 18px 6px 18px;
+    padding: 18px 26px;
+    font-family: monospace;
+    font-size: 23px;
+    line-height: 1.6;
+    flex: 1 1 auto;
+    box-sizing: border-box;
+  }
+  .resp-note { font-size: 22px; color: var(--blue); margin-top: 12px; line-height: 1.35; }
+
+  /* ================= Scene 3 ================= */
+  .s3-grid { flex: 1 1 auto; display: flex; gap: 40px; min-height: 0; padding-top: 18px; }
+  .s3-col { flex: 1 1 0; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+  .roster { padding: 18px 24px; }
+  .roster-head { font-size: 25px; font-weight: 700; margin-bottom: 12px; }
+  .roster-row {
+    display: inline-block;
+    border: 2.5px solid var(--ink78);
+    border-radius: 12px 4px 12px 4px;
+    padding: 6px 14px;
+    font-size: 22px;
+    margin: 0 12px 10px 0;
+    background: rgba(255, 255, 255, 0.6);
+  }
+  .eq {
+    font-size: 38px;
+    font-weight: 700;
+    line-height: 1.5;
+    padding: 20px 26px;
+  }
+  .wchip {
+    display: inline-block;
+    width: 48px; height: 48px;
+    line-height: 44px;
+    text-align: center;
+    border: 3.5px solid var(--blue);
+    color: var(--blue);
+    border-radius: 50% 45% 52% 48%;
+    font-size: 26px;
+    margin: 0 6px;
+    background: rgba(255, 255, 255, 0.7);
+    box-sizing: border-box;
+    vertical-align: middle;
+  }
+  .s3-win {
+    align-self: flex-start;
+    border: 4px solid var(--green);
+    color: var(--green);
+    border-radius: 50% 45% 55% 48% / 48% 55% 45% 52%;
+    padding: 10px 26px;
+    font-size: 28px;
+    font-weight: 700;
+  }
+  .graph-card { padding: 14px 18px 6px 18px; }
+  .graph-cap { font-size: 22px; color: var(--ink78); margin-top: 2px; }
+
+  /* ================= Scene 4 ================= */
+  .s4-grid {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    min-height: 0;
+    padding-top: 12px;
+  }
+  .quad {
+    border: 3px dashed rgba(34, 48, 63, 0.3);
+    border-radius: 20px;
+    padding: 14px 20px;
+    display: flex;
+    gap: 20px;
+    min-height: 0;
+    box-sizing: border-box;
+  }
+  .q-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+  .q-title { font-size: 25px; font-weight: 700; color: var(--blue); margin-bottom: 8px; }
+  .q-side { flex: 0 0 400px; display: flex; flex-direction: column; gap: 12px; justify-content: center; min-width: 0; padding-left: 10px; box-sizing: content-box; }
+  .brow { display: flex; align-items: center; gap: 6px; }
+  .bstate {
+    border: 3px solid var(--ink);
+    border-radius: 10px 4px 10px 4px;
+    padding: 7px 8px;
+    font-size: 22px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+  }
+  .bstate.red { border-color: var(--red); color: var(--red); }
+  .bstate.green { border-color: var(--green); color: var(--green); }
+  .bconn { width: 26px; height: 18px; flex: 0 0 auto; }
+  .bconn path { fill: none; stroke: var(--ink78); stroke-width: 3.5; stroke-linecap: round; }
+  .tallies { display: flex; gap: 8px; margin: 16px 0 10px 4px; align-items: flex-end; }
+  .tallies span { display: block; width: 6px; height: 34px; background: var(--red); border-radius: 3px; }
+  .tallies span:nth-child(2n) { transform: rotate(9deg); height: 30px; }
+  .tallies-cap { font-size: 22px; color: var(--ink78); }
+  .probe-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .probe { width: 18px; height: 18px; border-radius: 50%; background: var(--green); display: inline-block; }
+  .jitter-svg { width: 100%; height: 190px; }
+  .jitter-svg .main { fill: none; stroke: var(--ink); stroke-width: 4.5; stroke-linecap: round; }
+  .jitter-svg .jit { fill: none; stroke: var(--ink78); stroke-width: 3.5; stroke-dasharray: 9 8; stroke-linecap: round; }
+  .jlabel { font-size: 22px; fill: var(--ink78); font-family: "Segoe Print", cursive; }
+  .hedge-flow { display: flex; align-items: center; gap: 10px; }
+  .hchip {
+    border: 3px solid var(--ink);
+    border-radius: 10px 4px 10px 4px;
+    padding: 10px 14px;
+    font-size: 23px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+  }
+  .hlines { width: 120px; height: 120px; }
+  .hlines path { fill: none; stroke: var(--ink78); stroke-width: 4; stroke-linecap: round; }
+  .hflag-win { font-size: 24px; font-weight: 700; color: var(--green); margin-top: 10px; }
+  .hflag-lose { font-size: 22px; color: var(--ink78); text-decoration: line-through; margin-top: 4px; }
+  .fb-rows { display: flex; flex-direction: column; gap: 10px; }
+  .fb-row { font-size: 24px; }
+  .fb-row .x { color: var(--red); font-weight: 700; }
+  .fb-row .ok { color: var(--green); font-weight: 700; }
+  .fb-budget { display: inline-block; position: relative; margin-top: 12px; font-size: 24px; font-weight: 700; }
+  .fb-budget svg { position: absolute; inset: -12px -18px; width: calc(100% + 36px); height: calc(100% + 24px); }
+  .fb-budget path { fill: none; stroke: var(--green); stroke-width: 4; }
+  .s4-banner { flex: 0 0 auto; display: flex; justify-content: center; padding: 12px 0 0 0; }
+  .s4-banner .txt { position: relative; font-size: 30px; font-weight: 700; padding: 4px 18px; }
+
+  /* ================= Scene 5 ================= */
+  .s5-grid { flex: 1 1 auto; display: flex; gap: 40px; min-height: 0; padding-top: 14px; }
+  .s5-left { flex: 1.15 1 0; position: relative; min-width: 0; }
+  .s5-right { flex: 1 1 0; display: flex; flex-direction: column; gap: 16px; justify-content: center; }
+  .bucket-svg { width: 420px; height: 330px; }
+  .bucket-svg .s5-outline { fill: none; stroke: var(--ink); stroke-width: 5.5; stroke-linecap: round; }
+  .bucket-svg .tick { stroke: var(--ink78); stroke-width: 3; }
+  .s5-lane { position: relative; height: 190px; margin-top: 6px; }
+  .req-chip {
+    position: absolute;
+    border: 3px solid var(--ink);
+    border-radius: 10px 4px 10px 4px;
+    padding: 10px 16px;
+    font-size: 23px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.75);
+    white-space: nowrap;
+  }
+  .req-ok { color: var(--green); font-weight: 700; }
+  .s5-429 { top: 84px; left: 150px; font-size: 34px; }
+  .ra-note {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.9);
+    border: 2.5px solid var(--ink78);
+    border-radius: 4px 12px 4px 12px;
+    padding: 6px 12px;
+    font-size: 22px;
+    white-space: nowrap;
+  }
+  .s5-burst { margin-top: 14px; font-size: 22px; color: var(--ink78); max-width: 560px; }
+  .s5-redis { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
+  .replica {
+    border: 2.5px solid var(--ink78);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 22px;
+    background: rgba(255, 255, 255, 0.6);
+  }
+
+  /* ================= Scene 6 ================= */
+  .s6-tiers { flex: 0 0 auto; display: flex; gap: 36px; min-height: 0; padding-top: 16px; }
+  .tier {
+    flex: 1 1 0;
+    min-height: 235px;
+    padding: 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .tier-head { font-size: 25px; font-weight: 700; color: var(--blue); }
+  .tier-flow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .t-chip {
+    border: 3px solid var(--ink);
+    border-radius: 10px 4px 10px 4px;
+    padding: 8px 14px;
+    font-size: 22px;
+    background: rgba(255, 255, 255, 0.7);
+  }
+  .t-arrow { width: 46px; height: 22px; }
+  .t-arrow path { fill: none; stroke: var(--ink78); stroke-width: 4; stroke-linecap: round; }
+  .vec-svg { width: 300px; height: 150px; }
+  .vec-svg line, .vec-svg path { stroke: var(--blue); stroke-width: 4.5; stroke-linecap: round; fill: none; }
+  .s6-banner { flex: 0 0 auto; display: flex; justify-content: center; padding: 26px 0 0 0; }
+  .s6-banner .txt { position: relative; font-size: 30px; font-weight: 700; padding: 4px 20px; }
+  .s6-foot { flex: 0 0 auto; display: flex; gap: 22px; justify-content: center; margin-top: 26px; }
+  .s6-foot .sticky { flex: 0 1 430px; }
+  .redflag {
+    flex: 0 1 430px;
+    border: 3.5px solid var(--red);
+    color: var(--red);
+    border-radius: 8px 18px 8px 18px;
+    padding: 12px 18px;
+    font-size: 22px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.7);
+    box-sizing: border-box;
+  }
+
+  /* ================= Scene 7 ================= */
+  .s7-grid { flex: 1 1 auto; display: flex; gap: 36px; min-height: 0; padding-top: 12px; }
+  .s7-col { flex: 1 1 0; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .meter-panel { padding: 16px 20px; display: flex; gap: 20px; align-items: center; }
+  .gauge-wrap { position: relative; width: 260px; height: 170px; flex: 0 0 auto; }
+  .gauge-needle {
+    position: absolute;
+    left: 128px; bottom: 18px;
+    width: 5px; height: 108px;
+    background: var(--red);
+    border-radius: 3px;
+  }
+  .burn-wrap { flex: 0 0 auto; min-width: 0; }
+  .burn-svg { width: 100%; height: 280px; }
+  .burn-svg .s7-axis { stroke: var(--ink78); stroke-width: 3; }
+  .burn-svg .s7-soft { stroke: var(--amber); stroke-width: 4; stroke-dasharray: 10 8; fill: none; }
+  .burn-svg .s7-hard { stroke: var(--red); stroke-width: 4.5; fill: none; }
+  .burn-svg .s7-proj { stroke: var(--blue); stroke-width: 5; fill: none; stroke-linecap: round; }
+  .blab { font-size: 22px; fill: var(--ink); font-family: "Segoe Print", cursive; }
+  .ledger { padding: 16px 26px; }
+  .ledger-head { font-size: 25px; font-weight: 700; margin-bottom: 10px; }
+  .ledger-row {
+    font-family: monospace;
+    font-size: 22px;
+    padding: 7px 0;
+    border-bottom: 2px dashed rgba(34, 48, 63, 0.35);
+  }
+  .switch-line { display: flex; align-items: center; gap: 16px; }
+  .lever-base { position: relative; width: 96px; height: 110px; flex: 0 0 auto; }
+  .lever-plate { position: absolute; bottom: 0; left: 8px; right: 8px; height: 26px; background: var(--ink78); border-radius: 8px; }
+  .lever-arm { position: absolute; left: 41px; bottom: 16px; width: 14px; height: 84px; background: var(--red); border-radius: 8px; }
+  .lever-knob { position: absolute; left: -8px; top: -12px; width: 30px; height: 30px; border-radius: 50%; background: var(--red); border: 3px solid var(--ink); box-sizing: border-box; }
+  .switch-label { font-size: 24px; font-weight: 700; color: var(--blue); }
+
+  /* ================= Scene 8 ================= */
+  .s8-grid { flex: 1 1 auto; display: flex; flex-direction: column; gap: 18px; min-height: 0; padding-top: 12px; }
+  .s8-row1 { flex: 1 1 auto; display: flex; gap: 40px; min-height: 0; }
+  .s8-left { flex: 0 0 560px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .dot-grid { display: grid; grid-template-columns: repeat(10, 30px); gap: 9px; }
+  .dot { width: 26px; height: 26px; border-radius: 50%; background: rgba(34, 48, 63, 0.18); }
+  .dot.on { background: var(--blue); }
+  .s8-right { flex: 1 1 auto; display: flex; flex-direction: column; gap: 14px; justify-content: center; }
+  .s8-row2 { flex: 0 0 auto; display: flex; gap: 40px; }
+  .kill-panel {
+    flex: 1 1 0;
+    border: 3px dashed rgba(34, 48, 63, 0.3);
+    border-radius: 20px;
+    padding: 16px 22px;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+  }
+  .shadow-panel {
+    flex: 1.35 1 0;
+    border: 3px dashed rgba(34, 48, 63, 0.3);
+    border-radius: 20px;
+    padding: 16px 22px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    position: relative;
+  }
+  .shadow-flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .mirror-box {
+    border: 3px solid var(--ink);
+    border-radius: 12px 4px 12px 4px;
+    padding: 10px 14px;
+    font-size: 22px;
+    background: rgba(255, 255, 255, 0.7);
+  }
+  .s8-never { top: -20px; right: 14px; font-size: 30px; }
+
+  /* ================= Scene 9 ================= */
+  .s9-grid {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    min-height: 0;
+    padding-top: 12px;
+  }
+  .id-cell { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .id-cell.wide2 { grid-column: 1 / 3; flex-direction: row; align-items: center; gap: 26px; }
+  .sketch-line { padding: 14px 20px; display: flex; align-items: center; gap: 14px; }
+  .band { position: relative; width: 200px; height: 48px; border: 3.5px solid var(--ink); border-radius: 26px; background: rgba(255, 255, 255, 0.75); }
+  .band-badge {
+    position: absolute; left: -16px; top: -14px;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--hl);
+    border: 3px solid var(--ink);
+    box-sizing: border-box;
+  }
+  .jwt-badge { padding: 12px 20px; min-width: 330px; }
+  .jwt-row { font-family: monospace; font-size: 22px; line-height: 1.55; }
+  .fp-row { font-family: monospace; font-size: 22px; line-height: 1.6; }
+  .fp-strike { text-decoration: line-through; color: var(--ink78); }
+  .fp-chip { border: 2.5px solid var(--ink78); border-radius: 8px; padding: 4px 10px; display: inline-block; background: rgba(255,255,255,0.7); }
+  .key-chip {
+    border: 3px solid var(--ink);
+    border-radius: 10px 4px 10px 4px;
+    padding: 8px 16px;
+    font-size: 23px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+  }
+  .rot-svg { width: 130px; height: 40px; }
+  .rot-svg path { fill: none; stroke: var(--ink78); stroke-width: 4; stroke-linecap: round; }
+  .gdpr-rows { position: relative; padding: 14px 20px; flex: 1 1 auto; }
+  .gdpr-row { font-family: monospace; font-size: 22px; line-height: 1.7; }
+  .eraser {
+    position: absolute;
+    left: 0; top: 6px;
+    width: 84px; height: 40px;
+    background: #D7CBB8;
+    border: 3px solid var(--ink78);
+    border-radius: 8px;
+  }
+  .audit-note { font-size: 22px; color: var(--green); font-weight: 700; margin-top: 8px; }
+
+  /* ================= Scene 10 ================= */
+  .s10-body { flex: 1 1 auto; display: flex; flex-direction: column; gap: 16px; min-height: 0; padding-top: 12px; }
+  .results {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 70px;
+    padding: 20px 30px 24px 30px;
+  }
+  .stat { text-align: center; }
+  .stat .num { font-size: 84px; font-weight: 700; line-height: 1.05; }
+  .stat .num.blue { color: var(--blue); }
+  .stat .num.green { color: var(--green); }
+  .stat .lab { font-size: 25px; color: var(--ink78); margin-top: 2px; }
+  .vu-chip {
+    border: 3px solid var(--ink);
+    border-radius: 12px 4px 12px 4px;
+    padding: 10px 18px;
+    font-size: 24px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.7);
+  }
+  .queue-wrap { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+  .queue { display: flex; justify-content: space-between; width: 1240px; margin: 0 auto; position: relative; }
+  .person { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .p-head { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--ink); background: rgba(255, 255, 255, 0.7); box-sizing: border-box; }
+  .p-body { width: 30px; height: 24px; border: 3px solid var(--ink); border-radius: 12px 12px 6px 6px; background: rgba(255, 255, 255, 0.7); box-sizing: border-box; }
+  .p50-mark { text-align: center; margin-top: 6px; }
+  .p50-line { width: 3px; height: 16px; background: var(--blue); margin: 0 auto; }
+  .p50-lab { font-size: 22px; color: var(--blue); font-weight: 700; white-space: nowrap; }
+  .p95-bracket {
+    width: 1140px; height: 16px;
+    margin: 2px auto 0 auto;
+    border-left: 3.5px solid var(--ink);
+    border-right: 3.5px solid var(--ink);
+    border-bottom: 3.5px solid var(--ink);
+    border-radius: 0 0 10px 10px;
+  }
+  .p95-lab { text-align: center; font-size: 22px; color: var(--ink); margin-top: 6px; }
+  .p99-lab { text-align: center; font-size: 22px; color: var(--red); font-weight: 700; margin-top: 4px; }
+  .s10-bottom { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: flex-start; gap: 30px; }
+  .closing { position: relative; font-size: 30px; font-weight: 700; padding: 2px 6px; }
+  .closing svg { position: absolute; left: 0; right: 0; bottom: -10px; width: 100%; height: 12px; }
+  .closing path { fill: none; stroke: var(--green); stroke-width: 5; stroke-linecap: round; }
+
+  /* ================= Scene 11 ================= */
+  .s11-body { flex: 1 1 auto; display: flex; gap: 46px; min-height: 0; padding-top: 14px; }
+  .s11-list { flex: 1.25 1 0; display: flex; flex-direction: column; justify-content: center; gap: 8px; min-width: 0; }
+  .ck { display: flex; align-items: flex-start; gap: 16px; }
+  .ck-num {
+    position: relative;
+    flex: 0 0 46px;
+    width: 46px; height: 46px;
+    border: 3px solid var(--ink);
+    border-radius: 50% 46% 52% 48%;
+    display: grid;
+    place-items: center;
+    font-size: 24px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.65);
+    box-sizing: border-box;
+  }
+  .ck-num svg { position: absolute; right: -10px; bottom: -8px; width: 30px; height: 30px; }
+  .ck-num path { fill: none; stroke: var(--green); stroke-width: 6; stroke-linecap: round; }
+  .ck-txt { font-size: 25px; line-height: 1.3; padding-top: 6px; }
+  .s11-final-wrap { flex: 1 1 0; display: flex; align-items: center; justify-content: center; }
+  .final-card {
+    border: 4px solid var(--ink);
+    border-radius: 26px 8px 26px 8px / 8px 26px 8px 26px;
+    background: rgba(255, 255, 255, 0.7);
+    padding: 44px 50px;
+    text-align: center;
+    box-shadow: 0 12px 26px rgba(34, 48, 63, 0.16);
+  }
+  .final-name { font-size: 66px; font-weight: 700; color: var(--ink); letter-spacing: 2px; }
+  .final-tag { font-size: 30px; color: var(--blue); font-weight: 700; margin-top: 10px; }
+  .final-rule { border-top: 3px dashed rgba(34, 48, 63, 0.4); margin: 22px 0 18px 0; }
+  .final-stats { font-size: 28px; font-weight: 700; color: var(--green); }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="aegisgate-lecture" data-start="0" data-width="1920" data-height="1080" data-duration="397.8" data-fps="30">
+
+  <!-- ============ SCENE 1 — The problem: a call centre with one expert (0 – 29.7) ============ -->
+  <section class="clip scene" id="s1" data-start="0" data-duration="29.7">
+    <div class="scene-inner">
+      <header class="head">
+        <div class="kicker">01 &middot; THE PROBLEM</div>
+        <h1 class="title" id="s1-title">AEGISGATE <span class="accent">&mdash; the traffic controller for AI</span></h1>
+        <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+      </header>
+      <div class="s1-stage">
+        <div class="s1-callers">
+          <div class="s1-phones">
+            <div class="phone-wrap" id="s1-p1">
+              <div class="ring"><div class="phone"><div class="screen"></div><div class="speaker"></div></div></div>
+              <div class="phone-label">caller 1</div>
+            </div>
+            <div class="phone-wrap" id="s1-p2">
+              <div class="ring"><div class="phone"><div class="screen"></div><div class="speaker"></div></div></div>
+              <div class="phone-label">caller 2</div>
+            </div>
+            <div class="phone-wrap" id="s1-p3">
+              <div class="ring"><div class="phone"><div class="screen"></div><div class="speaker"></div></div></div>
+              <div class="phone-label">caller 3</div>
+            </div>
+          </div>
+          <div class="s1-callers-label" id="s1-callers-label">your product, phoning an expert for every answer</div>
+        </div>
+        <svg class="s1-wire" id="s1-wire" viewBox="0 0 300 320" aria-hidden="true">
+          <path pathLength="100" d="M10 40 C 110 52, 190 110, 282 148"/>
+          <path pathLength="100" d="M10 160 C 110 160, 190 155, 282 155"/>
+          <path pathLength="100" d="M10 280 C 110 268, 190 200, 282 162"/>
+        </svg>
+        <div class="desk-wrap" id="s1-desk">
+          <div class="desk sketch2">
+            <div class="desk-name">your LLM</div>
+            <div class="desk-sub">the one AI expert your product phones</div>
+          </div>
+          <div class="stamp s1-sick" id="s1-sick" data-layout-allow-overlap>SICK</div>
+          <div class="s1-bill" id="s1-bill" data-layout-allow-overflow>+ 3&times; the bill, overnight</div>
+        </div>
+      </div>
+      <div class="s1-sticky-row">
+        <div class="sticky s1-sticky" id="s1-sticky">
+          <div class="pin"></div>
+          <div class="term">API gateway</div>
+          <div class="def">one door that all traffic walks through before it reaches the real services.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 2 — One request through the switchboard (29.7 – 52.9) ============ -->
+  <section class="clip scene" id="s2" data-start="29.7" data-duration="23.2">
+    <div class="scene-inner">
+      <header class="head">
+        <div class="kicker">02 &middot; THE SWITCHBOARD</div>
+        <h1 class="title" id="s2-title">One request through the door</h1>
+        <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+      </header>
+      <div class="body-area">
+        <div class="s2-top">
+          <div class="sticky s2-tenant" id="s2-tenant">
+            <div class="pin"></div>
+            <div class="term">tenant</div>
+            <div class="def">one customer, with their own meter and their own key.</div>
+          </div>
+        </div>
+        <div class="s2-pipe-wrap">
+          <div class="s2-pipe">
+            <div class="pipe-group" id="s2-g1"><div class="pipe-box sketch">AUTH</div></div>
+            <div class="pipe-group" id="s2-g2"><svg class="conn" viewBox="0 0 62 26" aria-hidden="true"><path d="M2 13 H50 M42 5 L54 13 L42 21"/></svg><div class="pipe-box sketch">RATE LIMIT</div></div>
+            <div class="pipe-group" id="s2-g3"><svg class="conn" viewBox="0 0 62 26" aria-hidden="true"><path d="M2 13 H50 M42 5 L54 13 L42 21"/></svg><div class="pipe-box sketch">CACHE</div></div>
+            <div class="pipe-group" id="s2-g4"><svg class="conn" viewBox="0 0 62 26" aria-hidden="true"><path d="M2 13 H50 M42 5 L54 13 L42 21"/></svg><div class="pipe-box sketch">BUDGET</div></div>
+            <div class="pipe-group" id="s2-g5"><svg class="conn" viewBox="0 0 62 26" aria-hidden="true"><path d="M2 13 H50 M42 5 L54 13 L42 21"/></svg><div class="pipe-box sketch">ROUTER</div></div>
+            <div class="pipe-group" id="s2-g6"><svg class="conn" viewBox="0 0 62 26" aria-hidden="true"><path d="M2 13 H50 M42 5 L54 13 L42 21"/></svg><div class="pipe-box sketch">PROVIDER</div></div>
+          </div>
+          <div class="s2-rail"></div>
+          <div class="s2-dot" id="s2-dot">
+            <div class="bead"></div>
+            <div class="bead-label">the request</div>
+          </div>
+        </div>
+        <div class="s2-bottom">
+          <div class="term-card" id="s2-term">
+            <div class="ln" id="s2-l1">$ curl -s localhost:8000/v1/chat/completions \</div>
+            <div class="ln" id="s2-l2">&nbsp;&nbsp;-H "Authorization: Bearer sk-demo" \</div>
+            <div class="ln" id="s2-l3">&nbsp;&nbsp;-d '{"model":"gpt-4o","messages":[...]}'</div>
+          </div>
+          <div style="flex:1 1 auto; min-width:0;">
+            <div class="resp-card" id="s2-resp">
+              <div>200 OK</div>
+              <div>{</div>
+              <div>&nbsp;&nbsp;<span class="hlwrap"><span class="hlbar" id="s2-hl"></span><span class="hltext">"served_by": "gpt-4o-mini"</span></span>,</div>
+              <div>&nbsp;&nbsp;"answer": "Hi! How can I help?"</div>
+              <div>}</div>
+            </div>
+            <div class="resp-note" id="s2-note">served_by may differ from the model you asked for &mdash; the router picked the best-scoring healthy model.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 3 — Routing (52.9 – 81.4) ============ -->
+  <section class="clip scene" id="s3" data-start="52.9" data-duration="28.5">
+    <div class="scene-inner">
+      <header class="head">
+        <div class="kicker">03 &middot; STAGE ONE</div>
+        <h1 class="title" id="s3-title">Routing &mdash; who answers the call?</h1>
+        <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+      </header>
+      <div class="s3-grid">
+        <div class="s3-col">
+          <div class="roster sketch" id="s3-roster">
+            <div class="roster-head">the roster</div>
+            <div class="roster-row" id="s3-r1">model A &middot; tier 1 &middot; $$</div>
+            <div class="roster-row" id="s3-r2">model B &middot; tier 2 &middot; $</div>
+            <div class="roster-row" id="s3-r3">model C &middot; tier 1 &middot; $$$</div>
+          </div>
+          <div class="sticky" id="s3-st-registry">
+            <div class="pin"></div>
+            <div class="term">model registry</div>
+            <div class="def">the roster of every available expert, with prices and quality tiers.</div>
+          </div>
+          <div class="graph-card sketch2" id="s3-graph">
+            <svg viewBox="0 0 520 200" style="width:100%; height:190px;" aria-hidden="true">
+              <path class="s3-raw" pathLength="100" d="M10 130 L45 96 L80 138 L115 88 L150 128 L185 92 L220 132 L255 100 L290 126 L325 96 L360 118 L395 102 L430 112 L465 100 L505 108" fill="none" stroke="rgba(34,48,63,0.45)" stroke-width="3.5" stroke-linecap="round"/>
+              <path class="s3-ewma" pathLength="100" d="M10 122 C 100 112, 180 112, 250 112 S 400 106, 505 106" fill="none" stroke="#2E6FB7" stroke-width="5.5" stroke-linecap="round"/>
+              <text x="330" y="88" font-size="24" font-weight="700" fill="#2E6FB7" font-family="Segoe Print, cursive">EWMA</text>
+            </svg>
+            <div class="graph-cap">raw latency samples &rarr; the smoothed average the router trusts</div>
+          </div>
+          <div class="sticky small" id="s3-st-ewma">
+            <div class="pin"></div>
+            <div class="term">EWMA</div>
+            <div class="def">a moving average that trusts recent events &mdash; one hiccup doesn't panic; a slump shows up fast.</div>
+          </div>
+        </div>
+        <div class="s3-col">
+          <div class="eq sketch" id="s3-eq">
+            <span>score =</span>
+            <span class="wchip" id="s3-w1">w</span><span>&middot;latency +</span>
+            <span class="wchip" id="s3-w2">w</span><span>&middot;errors +</span>
+            <span class="wchip" id="s3-w3">w</span><span>&middot;cost +</span>
+            <span class="wchip" id="s3-w4">w</span><span>&middot;quality</span>
+          </div>
+          <div class="sticky" id="s3-st-score">
+            <div class="pin"></div>
+            <div class="term">routing score</div>
+            <div class="def">a blended mark per model &mdash; latency, errors, cost and quality, weighted toward what this request cares about.</div>
+          </div>
+          <div class="s3-win" id="s3-win">lowest blended score wins</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 4 — Breaker, retry, hedge, fallback (81.4 – 129.9) ============ -->
+  <section class="clip scene" id="s4" data-start="81.4" data-duration="48.5">
+    <div class="scene-inner">
+      <header class="head">
+        <div class="kicker">04 &middot; THE BAD DAY</div>
+        <h1 class="title" id="s4-title">When the expert doesn't answer</h1>
+        <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+      </header>
+      <div class="s4-grid">
+        <div class="quad" id="s4-q1">
+          <div class="q-main">
+            <div class="q-title">1 &middot; Circuit breaker</div>
+            <div class="brow">
+              <div class="bstate" id="s4-b-closed">CLOSED</div>
+              <svg class="bconn" viewBox="0 0 34 18" aria-hidden="true"><path d="M2 9 H26 M20 3 L30 9 L20 15"/></svg>
+              <div class="bstate red" id="s4-b-open">OPEN</div>
+              <svg class="bconn" viewBox="0 0 34 18" aria-hidden="true"><path d="M2 9 H26 M20 3 L30 9 L20 15"/></svg>
+              <div class="bstate green" id="s4-b-half">HALF-OPEN</div>
+            </div>
+            <div class="tallies" id="s4-tallies"><span></span><span></span><span></span><span></span><span></span></div>
+            <div class="tallies-cap" id="s4-tallies-cap">5 failures in a row &rarr; trip &middot; <span id="s4-30s" style="font-weight:700; color:#C43D3D;">opens for 30 s</span></div>
+            <div class="probe-row" id="s4-probes">
+              <span class="probe" id="s4-pr1"></span>
+              <span class="probe" id="s4-pr2"></span>
+              <span class="mini-note">two probe calls, then full service</span>
+            </div>
+          </div>
+          <div class="q-side">
+            <div class="sticky small" id="s4-st-breaker">
+              <div class="pin"></div>
+              <div class="term">circuit breaker</div>
+              <div class="def">after repeated failures, stop redialling a dead phone; probe it gently later.</div>
+            </div>
+            <div class="sticky small" id="s4-st-half">
+              <div class="pin"></div>
+              <div class="term">half-open state</div>
+              <div class="def">probation: two test calls only.</div>
+            </div>
+          </div>
+        </div>
+        <div class="quad" id="s4-q2">
+          <div class="q-main">
+            <div class="q-title">2 &middot; Retry with jitter</div>
+            <svg class="jitter-svg" viewBox="0 0 460 190" aria-hidden="true">
+              <path class="main" pathLength="100" d="M14 34 H446 M436 24 L450 34 L436 44"/>
+              <path class="jit" d="M40 78 C 110 78, 170 78, 240 78"/>
+              <path class="jit" d="M40 118 C 130 118, 250 118, 356 118"/>
+              <path class="jit" d="M40 158 C 150 158, 290 158, 420 158"/>
+              <text class="jlabel" x="248" y="72">+0.3 s</text>
+              <text class="jlabel" x="364" y="112">+1.1 s</text>
+              <text class="jlabel" x="352" y="150">+0.7 s</text>
+            </svg>
+          </div>
+          <div class="q-side">
+            <div class="sticky small" id="s4-st-jitter">
+              <div class="pin"></div>
+              <div class="term">retry with jitter</div>
+              <div class="def">random delays so thousands of clients don't redial in a synchronized herd.</div>
+            </div>
+          </div>
+        </div>
+        <div class="quad" id="s4-q3">
+          <div class="q-main">
+            <div class="q-title">3 &middot; Request hedging</div>
+            <div class="hedge-flow">
+              <div class="hchip">slow primary&hellip;</div>
+              <svg class="hlines" viewBox="0 0 120 120" aria-hidden="true">
+                <path d="M6 60 C 40 60, 60 26, 112 26"/>
+                <path d="M6 60 C 40 60, 60 94, 112 94"/>
+              </svg>
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <div class="hchip" id="s4-ha" style="border-color:#357A52;">phone model A</div>
+                <div class="hchip" id="s4-hb" style="border-color:rgba(34,48,63,0.55); color:rgba(34,48,63,0.78);">phone model B</div>
+              </div>
+            </div>
+            <div class="hflag-win" id="s4-hwin">&#10003; first answer wins &middot; 122 ms</div>
+            <div class="hflag-lose" id="s4-hlose">the loser is cancelled</div>
+          </div>
+          <div class="q-side">
+            <div class="sticky small" id="s4-st-hedge">
+              <div class="pin"></div>
+              <div class="term">request hedging</div>
+              <div class="def">call a second expert in parallel; first answer wins.</div>
+            </div>
+          </div>
+        </div>
+        <div class="quad" id="s4-q4">
+          <div class="q-main">
+            <div class="q-title">4 &middot; Fallback chain</div>
+            <div class="fb-rows">
+              <div class="fb-row" id="s4-f1">1&nbsp;&nbsp;primary &mdash; <span class="x">&#10007;</span></div>
+              <div class="fb-row" id="s4-f2">2&nbsp;&nbsp;second on the list &mdash; <span class="ok">&#10003;</span></div>
+              <div class="fb-row" id="s4-f3">3&nbsp;&nbsp;third &mdash; kept as spare</div>
+            </div>
+            <div class="fb-budget" id="s4-fb">attempt budget &le; 3
+              <svg viewBox="0 0 260 60" preserveAspectRatio="none" aria-hidden="true"><path pathLength="100" d="M14 34 C 40 6, 220 2, 248 26 C 258 40, 200 56, 110 56 C 40 56, 4 50, 14 30"/></svg>
+            </div>
+          </div>
+          <div class="q-side">
+            <div class="sticky small" id="s4-st-fb">
+              <div class="pin"></div>
+              <div class="term">fallback chain</div>
+              <div class="def">an ordered "who to try next" list with a strict attempt budget.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="s4-banner">
+        <div class="txt" id="s4-banner"><span class="hlbar" id="s4-hlbar"></span><span class="hltext">the user never sees any of this</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 5 — Rate limiting: the token bucket (129.9 – 162.8) ============ -->
+  <section class="clip scene" id="s5" data-start="129.9" data-duration="32.9">
+    <div class="scene-inner">
+      <header class="head">
+        <div class="kicker">05 &middot; STAGE TWO</div>
+        <h1 class="title" id="s5-title">Rate limiting &mdash; the token bucket</h1>
+        <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+      </header>
+      <div class="s5-grid">
+        <div class="s5-left">
+          <svg class="bucket-svg" viewBox="0 0 420 330" aria-hidden="true">
+            <path class="s5-outline" pathLength="100" d="M92 40 L132 290 L288 290 L328 40"/>
+            <line class="tick" x1="92" y1="40" x2="328" y2="40"/>
+            <rect id="s5-water" x="137" y="140" width="146" height="146" fill="rgba(46,111,183,0.28)"/>
+            <circle class="s5-drop" id="s5-d1" cx="180" cy="0" r="11" fill="#F2C94C" stroke="#22303F" stroke-width="2.5"/>
+            <circle class="s5-drop" id="s5-d2" cx="210" cy="0" r="11" fill="#F2C94C" stroke="#22303F" stroke-width="2.5"/>
+            <circle class="s5-drop" id="s5-d3" cx="195" cy="0" r="11" fill="#F2C94C" stroke="#22303F" stroke-width="2.5"/>
+            <circle class="s5-drop" id="s5-d4" cx="222" cy="0" r="11" fill="#F2C94C" stroke="#22303F" stroke-width="2.5"/>
+          </svg>
+          <div class="mini-note" id="s5-drip" style="margin-top:8px;">tokens drip in at a fixed rate &mdash; each request spends one</div>
+          <div class="s5-lane">
+            <div class="req-chip" id="s5-req1" style="left:0; top:10px;">request</div>
+            <div class="req-chip req-ok" id="s5-req1ok" style="left:210px; top:10px;">&#10003; spent one token</div>
+            <div class="req-chip" id="s5-req2" style="left:0; top:120px;">request</div>
+            <div class="stamp s5-429" id="s5-429" data-layout-allow-overlap>429</div>
+            <div class="ra-note" id="s5-ra" style="left:300px; top:132px;">Retry-After: 2s &mdash; "come back then"</div>
+          </div>
+          <div class="s5-burst" id="s5-burst">bursts are allowed up to the bucket's size &mdash; but nobody beats the long-run refill rate.</div>
+          <div class="s5-redis" id="s5-redis">
+            <div class="replica">replica 1</div>
+            <div class="replica">replica 2</div>
+            <div class="replica">replica 3</div>
+            <div class="mini-note">share one set of buckets in <span style="font-weight:700; color:#22303F;">Redis</span></div>
+          </div>
+        </div>
+        <div class="s5-right">
+          <div class="sticky" id="s5-st-bucket">
+            <div class="pin"></div>
+            <div class="term">token bucket</div>
+            <div class="def">a bucket of permission tokens refilling at a fixed rate; bursts allowed up to bucket size.</div>
+          </div>
+          <div class="sticky small" id="s5-st-429">
+            <div class="pin"></div>
+            <div class="term">429</div>
+            <div class="def">"too many requests &mdash; slow down."</div>
+          </div>
+          <div class="sticky small" id="s5-st-ra">
+            <div class="pin"></div>
+            <div class="term">Retry-After</div>
+            <div class="def">the note that says when to come back.</div>
+          </div>
+          <div class="sticky small" id="s5-st-redis">
+            <div class="pin"></div>
+            <div class="term">Redis</div>
+            <div class="def">the shared whiteboard many replicas read and write, so buckets are shared across instances.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 6 — The semantic cache (162.8 – 201.2) ============ -->
+  <section class="clip scene" id="s6" data-start="162.8" data-duration="38.4">
+    <div class="scene-inner">
+      <header class="head" style="display:flex; justify-content:space-between; align-items:flex-start; gap:30px;">
+        <div>
+          <div class="kicker">06 &middot; STAGE THREE</div>
+          <h1 class="title" id="s6-title">"Have I answered this before?"</h1>
+          <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+        </div>
+        <div class="sticky" id="s6-st-cache" style="flex:0 0 460px;">
+          <div class="pin"></div>
+          <div class="term">semantic cache</div>
+          <div class="def">a memory that matches by meaning, not exact text.</div>
+        </div>
+      </header>
+      <div class="s6-tiers">
+        <div class="tier sketch" id="s6-tier1">
+          <div class="tier-head">tier 1 &mdash; exact match</div>
+          <div class="tier-flow">
+            <div class="t-chip" id="s6-req">request</div>
+            <svg class="t-arrow" viewBox="0 0 46 22" aria-hidden="true"><path d="M2 11 H36 M28 4 L40 11 L28 18"/></svg>
+            <div class="t-chip mono" id="s6-fp">SHA-256 &rarr; a3f9c2e1&hellip;</div>
+            <div class="t-chip" id="s6-hit" style="border-color:#357A52; color:#357A52; font-weight:700;">&#10003; exact hit &mdash; 0 ms</div>
+          </div>
+        </div>
+        <div class="tier sketch2" id="s6-tier2">
+          <div class="tier-head">tier 2 &mdash; by meaning</div>
+          <div class="tier-flow">
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div class="t-chip" id="s6-q1">"what's a token bucket?"</div>
+              <div class="t-chip" id="s6-q2">"how does the token bucket work?"</div>
+            </div>
+            <svg class="vec-svg" viewBox="0 0 300 150" aria-hidden="true">
+              <line class="s6-v1" pathLength="100" x1="34" y1="128" x2="196" y2="34"/>
+              <line class="s6-v2" pathLength="100" x1="34" y1="128" x2="216" y2="102"/>
+              <path class="s6-arc" pathLength="100" d="M107 86 A 84 84 0 0 1 117 116"/>
+              <text x="138" y="88" font-size="24" fill="#22303F" font-family="Segoe Print, cursive">cos &theta;</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div class="s6-banner">
+        <div class="txt" id="s6-banner"><span class="hlbar" id="s6-hlbar"></span><span class="hltext">score above 0.92 &rarr; the stored answer returns instantly, for free</span></div>
+      </div>
+      <div class="s6-foot">
+        <div class="sticky small" id="s6-st-emb">
+          <div class="pin"></div>
+          <div class="term">embedding</div>
+          <div class="def">text turned into numbers where similar meanings sit close.</div>
+        </div>
+        <div class="sticky small" id="s6-st-cos">
+          <div class="pin"></div>
+          <div class="term">cosine similarity</div>
+          <div class="def">how closely two vectors point; 1.0 = same direction.</div>
+        </div>
+        <div class="sticky small" id="s6-st-ttl">
+          <div class="pin"></div>
+          <div class="term">TTL &middot; LRU</div>
+          <div class="def">expiry stamps so stale answers die; the full shelf evicts the least-recently-used.</div>
+        </div>
+        <div class="redflag" id="s6-flag">temperature &gt; 0.7 or tool calls &rarr; skip the cache</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 7 — The cost autopilot (201.2 – 236.0) ============ -->
+  <section class="clip scene" id="s7" data-start="201.2" data-duration="34.8">
+    <div class="scene-inner">
+      <header class="head">
+        <div class="kicker">07 &middot; STAGE FOUR</div>
+        <h1 class="title" id="s7-title">Money &mdash; the cost autopilot</h1>
+        <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+      </header>
+      <div class="s7-grid">
+        <div class="s7-col">
+          <div class="meter-panel sketch" id="s7-meter">
+            <div class="gauge-wrap">
+              <svg viewBox="0 0 260 170" style="width:100%; height:100%;" aria-hidden="true">
+                <path d="M30 150 A 100 100 0 0 1 230 150" fill="none" stroke="rgba(34,48,63,0.45)" stroke-width="7" stroke-linecap="round"/>
+                <line x1="46" y1="108" x2="58" y2="114" stroke="rgba(34,48,63,0.45)" stroke-width="3.5"/>
+                <line x1="130" y1="50" x2="130" y2="64" stroke="rgba(34,48,63,0.45)" stroke-width="3.5"/>
+                <line x1="214" y1="108" x2="202" y2="114" stroke="rgba(34,48,63,0.45)" stroke-width="3.5"/>
+              </svg>
+              <div class="gauge-needle" id="s7-needle"></div>
+            </div>
+            <div>
+              <div style="font-size:25px; font-weight:700;">the meter</div>
+              <div class="mini-note" style="max-width:300px;">a smart electricity meter for AI &mdash; it watches every cent as it is spent.</div>
+            </div>
+          </div>
+          <div class="burn-wrap sketch2" id="s7-burn">
+            <svg class="burn-svg" viewBox="0 0 560 240" aria-hidden="true">
+              <line class="s7-axis" x1="24" y1="210" x2="540" y2="210"/>
+              <line class="s7-axis" x1="24" y1="210" x2="24" y2="26"/>
+              <path class="s7-soft" pathLength="100" d="M24 120 H540"/>
+              <path class="s7-hard" pathLength="100" d="M24 62 H540"/>
+              <path class="s7-proj" pathLength="100" d="M24 196 C 140 192, 260 160, 350 108 S 500 66, 528 60"/>
+              <text class="blab" x="36" y="52" fill="#C43D3D" font-weight="700">hard &mdash; the wall</text>
+              <text class="blab" x="36" y="110">soft &mdash; the warning line</text>
+              <text class="blab" x="350" y="178" fill="#2E6FB7" font-weight="700">burn projection</text>
+            </svg>
+          </div>
+          <div class="switch-line" id="s7-switch">
+            <div class="lever-base">
+              <div class="lever-plate"></div>
+              <div class="lever-arm" id="s7-lever"><div class="lever-knob"></div></div>
+            </div>
+            <div>
+              <div class="switch-label" id="s7-switch-label">downgrade easy tasks one tier</div>
+              <div class="mini-note">easy questions move to a cheaper model &mdash; quality tier lowered just a notch</div>
+            </div>
+          </div>
+        </div>
+        <div class="s7-col">
+          <div class="ledger sketch" id="s7-ledger">
+            <div class="ledger-head">the usage ledger &mdash; a receipt book</div>
+            <div class="ledger-row" id="s7-l1">+ $0.0042 &middot; gpt-4o-mini &middot; 342 tok</div>
+            <div class="ledger-row" id="s7-l2">+ $0.0118 &middot; gpt-4o &middot; 812 tok</div>
+            <div class="ledger-row" id="s7-l3">+ $0.0021 &middot; echo-mock &middot; 96 tok</div>
+            <div class="ledger-row" id="s7-l4">+ $0.0063 &middot; gpt-4o-mini &middot; 501 tok</div>
+          </div>
+          <div class="sticky" id="s7-st-budget">
+            <div class="pin"></div>
+            <div class="term">budget (soft / hard)</div>
+            <div class="def">the warning line, and the wall.</div>
+          </div>
+          <div class="sticky" id="s7-st-burn">
+            <div class="pin"></div>
+            <div class="term">burn projection</div>
+            <div class="def">extrapolate this month's spend to month-end &mdash; at 80% of hard budget, act.</div>
+          </div>
+          <div class="sticky" id="s7-st-ledger">
+            <div class="pin"></div>
+            <div class="term">append-only ledger &middot; WAL</div>
+            <div class="def">a receipt book you only write in &mdash; write the note first, apply second; nothing accepted is ever lost on a crash.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 8 — Feature flags (236.0 – 271.3) ============ -->
+  <section class="clip scene" id="s8" data-start="236.0" data-duration="35.3">
+    <div class="scene-inner">
+      <header class="head">
+        <div class="kicker">08 &middot; STAGE FIVE</div>
+        <h1 class="title" id="s8-title">Change without fear &mdash; feature flags</h1>
+        <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+      </header>
+      <div class="s8-grid">
+        <div class="s8-row1">
+          <div class="s8-left" id="s8-left">
+            <div class="dot-grid" id="s8-grid"></div>
+            <div class="mini-note" id="s8-gridnote">100 users &middot; <span style="color:#2E6FB7; font-weight:700;">5 highlighted &rarr; the new model, first</span></div>
+          </div>
+          <div class="s8-right">
+            <div class="sticky" id="s8-st-roll">
+              <div class="pin"></div>
+              <div class="term">percentage rollout</div>
+              <div class="def">let a few users try the new model first &mdash; 5%, then wider.</div>
+            </div>
+            <div class="sticky" id="s8-st-hash">
+              <div class="pin"></div>
+              <div class="term">hash bucketing</div>
+              <div class="def">hash the user's id; the hash picks their bucket, deterministically.</div>
+            </div>
+            <div class="sticky" id="s8-st-sticky">
+              <div class="pin"></div>
+              <div class="term">sticky session</div>
+              <div class="def">same user, same variant, every time &mdash; nobody's app changes personality mid-chat.</div>
+            </div>
+          </div>
+        </div>
+        <div class="s8-row2">
+          <div class="kill-panel" id="s8-kill">
+            <div class="lever-base">
+              <div class="lever-plate"></div>
+              <div class="lever-arm" id="s8-lever"><div class="lever-knob"></div></div>
+            </div>
+            <div>
+              <div class="switch-label" style="color:#C43D3D;">KILL SWITCH</div>
+              <div class="mini-note" style="max-width:420px;">one flag removes a model everywhere, instantly.</div>
+            </div>
+          </div>
+          <div class="shadow-panel" id="s8-shadow">
+            <div class="shadow-flow">
+              <div class="hchip">real traffic</div>
+              <svg class="t-arrow" viewBox="0 0 46 22" aria-hidden="true"><path d="M2 11 H36 M28 4 L40 11 L28 18"/></svg>
+              <div class="mirror-box" id="s8-mirror">shadow model &mdash; mirrors every request into a diff notebook</div>
+            </div>
+            <div class="stamp s8-never" id="s8-never" data-layout-allow-overlap>NEVER SERVES</div>
+          </div>
+        </div>
+      </div>
+      <div class="s4-banner" style="padding-top:0;">
+        <div class="txt" id="s8-banner"><span class="hlbar" id="s8-hlbar"></span><span class="hltext">shadow mode: the dress rehearsal &mdash; mirror, diff, never show the user</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 9 — Identity, receipts, erasure (271.3 – 306.3) ============ -->
+  <section class="clip scene" id="s9" data-start="271.3" data-duration="35.0">
+    <div class="scene-inner">
+      <header class="head">
+        <div class="kicker">09 &middot; IDENTITY &amp; RECEIPTS</div>
+        <h1 class="title" id="s9-title">Who goes through the door?</h1>
+        <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+      </header>
+      <div class="s9-grid">
+        <div class="id-cell" id="s9-cell1">
+          <div class="sketch-line sketch" id="s9-band">
+            <div class="band"><div class="band-badge"></div></div>
+            <div class="mini-note">the wristband that proves you already paid</div>
+          </div>
+          <div class="sticky small" id="s9-st-bearer">
+            <div class="pin"></div>
+            <div class="term">bearer token</div>
+            <div class="def">whoever carries it, gets in &mdash; so it must be guarded.</div>
+          </div>
+        </div>
+        <div class="id-cell" id="s9-cell2">
+          <div class="sketch-line jwt-badge sketch2" id="s9-jwt">
+            <div>
+              <div style="font-size:25px; font-weight:700; color:#2E6FB7;">JWT badge</div>
+              <div class="jwt-row">tenant : acme</div>
+              <div class="jwt-row">exp&nbsp;&nbsp;&nbsp;: 2026-12-31</div>
+              <svg width="150" height="26" viewBox="0 0 150 26" aria-hidden="true">
+                <path d="M6 18 C 26 2, 40 24, 60 12 S 100 4, 144 14" fill="none" stroke="#C43D3D" stroke-width="3.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+          </div>
+          <div class="sticky small" id="s9-st-jwt">
+            <div class="pin"></div>
+            <div class="term">JWT</div>
+            <div class="def">an ID badge carrying signed claims the server can verify without a lookup. <span style="color:#2E6FB7; font-weight:700;">HS256</span> &mdash; the signing recipe: shared secret + SHA-256.</div>
+          </div>
+        </div>
+        <div class="id-cell" id="s9-cell3">
+          <div class="sketch-line sketch" id="s9-fp">
+            <div>
+              <div class="fp-row"><span class="fp-strike">sk-live-7f3a&#8230;</span></div>
+              <div class="fp-row"><span class="fp-chip">SHA-256 &rarr; 9f86d081&hellip;</span></div>
+            </div>
+          </div>
+          <div class="sticky small" id="s9-st-sha">
+            <div class="pin"></div>
+            <div class="term">SHA-256</div>
+            <div class="def">a one-way fingerprint &mdash; tokens are stored only as fingerprints, compared in constant time.</div>
+          </div>
+        </div>
+        <div class="id-cell wide2" id="s9-cell4">
+          <div class="sketch-line sketch2" id="s9-rot" style="flex:1 1 0;">
+            <div class="key-chip">old key</div>
+            <svg class="rot-svg" viewBox="0 0 130 40" aria-hidden="true"><path pathLength="100" d="M6 20 H108 M96 8 L112 20 L96 32"/></svg>
+            <div class="key-chip">new key</div>
+            <div class="mini-note">both work during the switchover</div>
+          </div>
+          <div class="sticky small" id="s9-st-rot" style="flex:0 0 420px;">
+            <div class="pin"></div>
+            <div class="term">key rotation</div>
+            <div class="def">new lock, old key works during the switchover.</div>
+          </div>
+        </div>
+        <div class="id-cell" id="s9-cell5">
+          <div class="gdpr-rows sketch" id="s9-gdpr">
+            <div class="gdpr-row" id="s9-g1">tenant-42 &middot; req 8812 &middot; $0.004</div>
+            <div class="gdpr-row" id="s9-g2">tenant-42 &middot; req 9107 &middot; $0.011</div>
+            <div class="gdpr-row" id="s9-g3">tenant-42 &middot; req 9442 &middot; $0.002</div>
+            <div class="eraser" id="s9-eraser" data-layout-ignore></div>
+            <div class="audit-note" id="s9-audit">audit log: tenant 42 &mdash; erased, and the deletion itself is logged</div>
+          </div>
+          <div class="sticky small" id="s9-st-gdpr">
+            <div class="pin"></div>
+            <div class="term">GDPR erasure</div>
+            <div class="def">delete a tenant's data on request &mdash; and write the deletion itself to the audit log.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 10 — The measured numbers (306.3 – 348.8) ============ -->
+  <section class="clip scene" id="s10" data-start="306.3" data-duration="42.5">
+    <div class="scene-inner">
+      <header class="head">
+        <div class="kicker">10 &middot; THE NUMBERS</div>
+        <h1 class="title" id="s10-title">Does it hold up? The measured load test</h1>
+        <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+      </header>
+      <div class="s10-body">
+        <div class="results sketch" id="s10-board">
+          <div class="vu-chip" id="s10-vu">50 virtual users &middot; real gateway</div>
+          <div class="stat"><div class="num blue" id="s10-num-req">0</div><div class="lab">requests</div></div>
+          <div class="stat"><div class="num green" id="s10-num-err">0</div><div class="lab">errors</div></div>
+          <div class="stat"><div class="num" id="s10-num-rps">0</div><div class="lab">requests / second</div></div>
+        </div>
+        <div class="queue-wrap">
+          <div class="queue" id="s10-queue"></div>
+          <div class="p50-mark" id="s10-p50mark">
+            <div class="p50-line"></div>
+            <div class="p50-lab">p50 &asymp; 36 ms &mdash; the median: the typical customer</div>
+          </div>
+          <div class="p95-bracket" id="s10-p95"></div>
+          <div class="p95-lab" id="s10-p95lab">p95 &asymp; 60 ms &mdash; 95 out of 100 finished within this</div>
+          <div class="p99-lab" id="s10-p99lab">p99 &asymp; 68 ms &mdash; even the unlucky 1% only waited this long</div>
+        </div>
+        <div class="s10-bottom">
+          <div class="sticky small" id="s10-st-rps" style="flex:0 1 430px;">
+            <div class="pin"></div>
+            <div class="term">throughput (rps)</div>
+            <div class="def">requests handled per second.</div>
+          </div>
+          <div class="sticky small" id="s10-st-pct" style="flex:0 1 560px;">
+            <div class="pin"></div>
+            <div class="term">p50 / p95 / p99</div>
+            <div class="def">the typical wait, the "95 out of 100" wait, and the bad-day wait.</div>
+          </div>
+          <div class="closing" id="s10-closing">the tail barely rises above the median.
+            <svg viewBox="0 0 560 12" preserveAspectRatio="none" aria-hidden="true"><path pathLength="100" d="M6 7 C 120 2, 260 11, 380 6 S 540 4, 556 7"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 11 — The 30-second recap (348.8 – 397.8) ============ -->
+  <section class="clip scene" id="s11" data-start="348.8" data-duration="49.0">
+    <div class="scene-inner">
+      <header class="head">
+        <div class="kicker">11 &middot; RECAP</div>
+        <h1 class="title" id="s11-title">The 30-second recap</h1>
+        <svg class="uline" viewBox="0 0 620 16" aria-hidden="true"><path pathLength="100" d="M4 9 C 110 3, 230 14, 350 8 S 560 5, 616 9"/></svg>
+      </header>
+      <div class="s11-body">
+        <div class="s11-list">
+          <div class="ck" id="s11-item1"><div class="ck-num">1<svg viewBox="0 0 30 30" aria-hidden="true"><path pathLength="100" d="M5 17 L12 24 L26 6"/></svg></div><div class="ck-txt">One switchboard between your product and every AI model.</div></div>
+          <div class="ck" id="s11-item2"><div class="ck-num">2<svg viewBox="0 0 30 30" aria-hidden="true"><path pathLength="100" d="M5 17 L12 24 L26 6"/></svg></div><div class="ck-txt">Routing picks the best-scoring healthy expert.</div></div>
+          <div class="ck" id="s11-item3"><div class="ck-num">3<svg viewBox="0 0 30 30" aria-hidden="true"><path pathLength="100" d="M5 17 L12 24 L26 6"/></svg></div><div class="ck-txt">Breakers, hedges and fallback chains cover the bad days.</div></div>
+          <div class="ck" id="s11-item4"><div class="ck-num">4<svg viewBox="0 0 30 30" aria-hidden="true"><path pathLength="100" d="M5 17 L12 24 L26 6"/></svg></div><div class="ck-txt">Token buckets cap speed politely.</div></div>
+          <div class="ck" id="s11-item5"><div class="ck-num">5<svg viewBox="0 0 30 30" aria-hidden="true"><path pathLength="100" d="M5 17 L12 24 L26 6"/></svg></div><div class="ck-txt">A semantic cache answers repeats for free.</div></div>
+          <div class="ck" id="s11-item6"><div class="ck-num">6<svg viewBox="0 0 30 30" aria-hidden="true"><path pathLength="100" d="M5 17 L12 24 L26 6"/></svg></div><div class="ck-txt">The cost autopilot downgrades easy tasks before budgets break.</div></div>
+          <div class="ck" id="s11-item7"><div class="ck-num">7<svg viewBox="0 0 30 30" aria-hidden="true"><path pathLength="100" d="M5 17 L12 24 L26 6"/></svg></div><div class="ck-txt">Flags and a kill switch make every change reversible.</div></div>
+          <div class="ck" id="s11-item8"><div class="ck-num">8<svg viewBox="0 0 30 30" aria-hidden="true"><path pathLength="100" d="M5 17 L12 24 L26 6"/></svg></div><div class="ck-txt">Signed tokens, a receipt-book ledger, GDPR erasure.</div></div>
+          <div class="ck" id="s11-item9"><div class="ck-num">9<svg viewBox="0 0 30 30" aria-hidden="true"><path pathLength="100" d="M5 17 L12 24 L26 6"/></svg></div><div class="ck-txt">106 offline tests prove all of it.</div></div>
+        </div>
+        <div class="s11-final-wrap">
+          <div class="final-card" id="s11-final">
+            <div class="final-name">AEGISGATE</div>
+            <div class="final-tag">the traffic controller for AI</div>
+            <div class="final-rule"></div>
+            <div class="final-stats">106 tests &middot; 0 errors at 484 rps</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VOICEOVER (track 3, one clip per scene, starts 0.5 s into the scene) ============ -->
+  <audio id="vo-01" src="assets/voiceover/scene01.wav" data-start="0.5" data-duration="26.688" data-track-index="3" data-volume="1"></audio>
+  <audio id="vo-02" src="assets/voiceover/scene02.wav" data-start="30.2" data-duration="21.184" data-track-index="3" data-volume="1"></audio>
+  <audio id="vo-03" src="assets/voiceover/scene03.wav" data-start="53.4" data-duration="26.474667" data-track-index="3" data-volume="1"></audio>
+  <audio id="vo-04" src="assets/voiceover/scene04.wav" data-start="81.9" data-duration="46.479333" data-track-index="3" data-volume="1"></audio>
+  <audio id="vo-05" src="assets/voiceover/scene05.wav" data-start="130.4" data-duration="30.884667" data-track-index="3" data-volume="1"></audio>
+  <audio id="vo-06" src="assets/voiceover/scene06.wav" data-start="163.3" data-duration="36.388667" data-track-index="3" data-volume="1"></audio>
+  <audio id="vo-07" src="assets/voiceover/scene07.wav" data-start="201.7" data-duration="32.783333" data-track-index="3" data-volume="1"></audio>
+  <audio id="vo-08" src="assets/voiceover/scene08.wav" data-start="236.5" data-duration="33.295333" data-track-index="3" data-volume="1"></audio>
+  <audio id="vo-09" src="assets/voiceover/scene09.wav" data-start="271.8" data-duration="32.975333" data-track-index="3" data-volume="1"></audio>
+  <audio id="vo-10" src="assets/voiceover/scene10.wav" data-start="306.8" data-duration="39.951333" data-track-index="3" data-volume="1"></audio>
+  <audio id="vo-11" src="assets/voiceover/scene11.wav" data-start="349.3" data-duration="45.476667" data-track-index="3" data-volume="1"></audio>
+
+  <!-- ============ MUSIC (track 10; two non-overlapping placements, volume via automation lanes) ============ -->
+  <audio id="music-a" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3" data-start="0" data-duration="55" data-track-index="10"
+    data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0},{"t":2,"v":0.14},{"t":50,"v":0.14},{"t":55,"v":0}]}]}'
+  ></audio>
+  <audio id="music-b" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3" data-start="306.3" data-duration="91.5" data-track-index="10"
+    data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0},{"t":2.5,"v":0.12},{"t":87,"v":0.12},{"t":91.5,"v":0}]}]}'
+  ></audio>
+
+  <!-- ============ SFX (tracks 11+; sparse, low volume — never competes with narration) ============ -->
+  <audio id="sfx-01" src="assets/sfx/impact/impactWood_light_000.ogg" data-start="1.2"   data-duration="1" data-track-index="11" data-volume="0.45"></audio>
+  <audio id="sfx-02" src="assets/sfx/impact/impactWood_light_001.ogg" data-start="1.9"   data-duration="1" data-track-index="12" data-volume="0.42"></audio>
+  <audio id="sfx-03" src="assets/sfx/impact/impactWood_light_000.ogg" data-start="2.6"   data-duration="1" data-track-index="13" data-volume="0.40"></audio>
+  <audio id="sfx-04" src="assets/sfx/impact/impactSoft_medium_000.ogg" data-start="9.2"  data-duration="1" data-track-index="14" data-volume="0.55"></audio>
+  <audio id="sfx-05" src="assets/sfx/interface/drop_001.ogg" data-start="21.6"  data-duration="1" data-track-index="15" data-volume="0.50"></audio>
+  <audio id="sfx-06" src="assets/sfx/interface/drop_001.ogg" data-start="31.0"  data-duration="1" data-track-index="16" data-volume="0.40"></audio>
+  <audio id="sfx-07" src="assets/sfx/interface/drop_002.ogg" data-start="31.8"  data-duration="1" data-track-index="17" data-volume="0.45"></audio>
+  <audio id="sfx-08" src="assets/sfx/interface/drop_002.ogg" data-start="38.8"  data-duration="1" data-track-index="18" data-volume="0.45"></audio>
+  <audio id="sfx-09" src="assets/sfx/interface/drop_001.ogg" data-start="44.4"  data-duration="1" data-track-index="19" data-volume="0.45"></audio>
+  <audio id="sfx-10" src="assets/sfx/interface/drop_002.ogg" data-start="47.6"  data-duration="1" data-track-index="20" data-volume="0.45"></audio>
+  <audio id="sfx-11" src="assets/sfx/interface/drop_002.ogg" data-start="61.6"  data-duration="1" data-track-index="21" data-volume="0.40"></audio>
+  <audio id="sfx-12" src="assets/sfx/interface/drop_001.ogg" data-start="67.4"  data-duration="1" data-track-index="22" data-volume="0.40"></audio>
+  <audio id="sfx-13" src="assets/sfx/interface/switch_001.ogg" data-start="90.4" data-duration="1" data-track-index="23" data-volume="0.55"></audio>
+  <audio id="sfx-14" src="assets/sfx/interface/drop_002.ogg" data-start="97.4"  data-duration="1" data-track-index="24" data-volume="0.40"></audio>
+  <audio id="sfx-15" src="assets/sfx/impact/impactWood_light_001.ogg" data-start="112.4" data-duration="1" data-track-index="25" data-volume="0.45"></audio>
+  <audio id="sfx-16" src="assets/sfx/interface/drop_001.ogg" data-start="118.0" data-duration="1" data-track-index="26" data-volume="0.40"></audio>
+  <audio id="sfx-17" src="assets/sfx/interface/drop_001.ogg" data-start="132.4" data-duration="1" data-track-index="27" data-volume="0.40"></audio>
+  <audio id="sfx-18" src="assets/sfx/interface/error_005.ogg" data-start="140.6" data-duration="1" data-track-index="28" data-volume="0.60"></audio>
+  <audio id="sfx-19" src="assets/sfx/interface/drop_002.ogg" data-start="142.6" data-duration="1" data-track-index="29" data-volume="0.40"></audio>
+  <audio id="sfx-20" src="assets/sfx/interface/drop_001.ogg" data-start="167.4" data-duration="1" data-track-index="30" data-volume="0.45"></audio>
+  <audio id="sfx-21" src="assets/sfx/interface/drop_002.ogg" data-start="180.4" data-duration="1" data-track-index="31" data-volume="0.45"></audio>
+  <audio id="sfx-22" src="assets/sfx/interface/switch_002.ogg" data-start="215.4" data-duration="1" data-track-index="32" data-volume="0.50"></audio>
+  <audio id="sfx-23" src="assets/sfx/interface/drop_002.ogg" data-start="222.8" data-duration="1" data-track-index="33" data-volume="0.40"></audio>
+  <audio id="sfx-24" src="assets/sfx/interface/drop_001.ogg" data-start="237.2" data-duration="1" data-track-index="34" data-volume="0.40"></audio>
+  <audio id="sfx-25" src="assets/sfx/interface/switch_001.ogg" data-start="252.1" data-duration="1" data-track-index="35" data-volume="0.55"></audio>
+  <audio id="sfx-26" src="assets/sfx/interface/drop_002.ogg" data-start="257.2" data-duration="1" data-track-index="36" data-volume="0.40"></audio>
+  <audio id="sfx-27" src="assets/sfx/interface/drop_001.ogg" data-start="276.0" data-duration="1" data-track-index="37" data-volume="0.45"></audio>
+  <audio id="sfx-28" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="292.4" data-duration="1" data-track-index="38" data-volume="0.45"></audio>
+  <audio id="sfx-29" src="assets/sfx/impact/impactSoft_medium_000.ogg" data-start="307.4" data-duration="1" data-track-index="39" data-volume="0.50"></audio>
+  <audio id="sfx-30" src="assets/sfx/interface/drop_002.ogg" data-start="325.6" data-duration="1" data-track-index="40" data-volume="0.40"></audio>
+  <audio id="sfx-31" src="assets/sfx/impact/impactWood_light_000.ogg" data-start="350.0" data-duration="1" data-track-index="41" data-volume="0.30"></audio>
+  <audio id="sfx-32" src="assets/sfx/impact/impactWood_light_001.ogg" data-start="353.8" data-duration="1" data-track-index="42" data-volume="0.30"></audio>
+  <audio id="sfx-33" src="assets/sfx/impact/impactWood_light_000.ogg" data-start="357.5" data-duration="1" data-track-index="43" data-volume="0.30"></audio>
+  <audio id="sfx-34" src="assets/sfx/impact/impactWood_light_001.ogg" data-start="362.0" data-duration="1" data-track-index="44" data-volume="0.30"></audio>
+  <audio id="sfx-35" src="assets/sfx/impact/impactWood_light_000.ogg" data-start="364.4" data-duration="1" data-track-index="45" data-volume="0.30"></audio>
+  <audio id="sfx-36" src="assets/sfx/impact/impactWood_light_001.ogg" data-start="366.8" data-duration="1" data-track-index="46" data-volume="0.30"></audio>
+  <audio id="sfx-37" src="assets/sfx/impact/impactWood_light_000.ogg" data-start="369.5" data-duration="1" data-track-index="47" data-volume="0.30"></audio>
+  <audio id="sfx-38" src="assets/sfx/impact/impactWood_light_001.ogg" data-start="372.0" data-duration="1" data-track-index="48" data-volume="0.30"></audio>
+  <audio id="sfx-39" src="assets/sfx/impact/impactWood_light_000.ogg" data-start="378.0" data-duration="1" data-track-index="49" data-volume="0.30"></audio>
+  <audio id="sfx-40" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="384.86" data-duration="1" data-track-index="50" data-volume="0.55"></audio>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var tl = gsap.timeline({ paused: true });
+
+  /* ---------- helpers (all initial states authored inside the timeline) ---------- */
+
+  // scene fade in at its start; soft fade out just before its end (board "wipe")
+  function sceneIO(id, start, end, isLast) {
+    tl.fromTo("#" + id + " .scene-inner",
+      { opacity: 0 },
+      { opacity: 1, duration: 0.6, ease: "power2.out" }, start);
+    if (!isLast) {
+      tl.fromTo("#" + id + " .scene-inner",
+        { opacity: 1 },
+        { opacity: 0, duration: 0.7, ease: "power2.in", immediateRender: false },
+        end - 0.85);
+    }
+  }
+
+  function up(sel, at, o) {
+    o = o || {};
+    tl.fromTo(sel,
+      { opacity: 0, y: 34, rotation: 0 },
+      { opacity: 1, y: 0, rotation: o.r || 0, duration: o.d || 0.6, ease: "power3.out" }, at);
+  }
+
+  function pop(sel, at, o) {
+    o = o || {};
+    tl.fromTo(sel,
+      { opacity: 0, scale: 0.7, y: 12, rotation: (o.r || 0) - 2, transformOrigin: "50% 50%" },
+      { opacity: 1, scale: 1, y: 0, rotation: (o.r || 0), duration: o.d || 0.5, ease: "back.out(1.7)" }, at);
+  }
+
+  // sticky note pinned onto the board: drops in from above with a slight tilt
+  function stickyIn(sel, at, r) {
+    tl.fromTo(sel,
+      { opacity: 0, y: -30, scale: 0.92, rotation: (r || 0) - 2.5, transformOrigin: "50% 0%" },
+      { opacity: 1, y: 0, scale: 1, rotation: (r || 0), duration: 0.5, ease: "power2.out" }, at);
+  }
+
+  // SVG stroke draw: pair with pathLength="100" + stroke-dasharray via GSAP
+  function draw(sel, at, dur) {
+    tl.fromTo(sel,
+      { strokeDasharray: 100, strokeDashoffset: 100 },
+      { strokeDashoffset: 0, duration: dur || 0.8, ease: "power2.inOut" }, at);
+  }
+
+  // typing-style wipe reveal
+  function wipe(sel, at, dur) {
+    tl.fromTo(sel,
+      { clipPath: "inset(-4% 100% -4% 0%)" },
+      { clipPath: "inset(-4% 0% -4% 0%)", duration: dur || 0.8, ease: "none" }, at);
+  }
+
+  // highlighter bar sweep (bar sits behind text)
+  function mark(sel, at, dur) {
+    tl.fromTo(sel,
+      { scaleX: 0, transformOrigin: "left center" },
+      { scaleX: 1, duration: dur || 0.5, ease: "power2.out" }, at);
+  }
+
+  // rubber-stamp arrival
+  function stamp(sel, at) {
+    tl.fromTo(sel,
+      { opacity: 0, scale: 2.4, rotation: -16, transformOrigin: "50% 50%" },
+      { opacity: 1, scale: 1, rotation: -8, duration: 0.32, ease: "power4.in" }, at);
+    tl.fromTo(sel,
+      { scale: 1.06 },
+      { scale: 1, duration: 0.2, ease: "power2.out", immediateRender: false }, at + 0.32);
+  }
+
+  // phone ring: shake an inner wrapper (finite repeats)
+  function ring(sel, at) {
+    tl.fromTo(sel,
+      { rotation: -3 },
+      { rotation: 3, duration: 0.09, yoyo: true, repeat: 7, ease: "none" }, at);
+    tl.to(sel, { rotation: 0, duration: 0.1, immediateRender: false }, at + 0.72);
+  }
+
+  function sceneIOAll() {
+    sceneIO("s1", 0, 29.7);
+    sceneIO("s2", 29.7, 52.9);
+    sceneIO("s3", 52.9, 81.4);
+    sceneIO("s4", 81.4, 129.9);
+    sceneIO("s5", 129.9, 162.8);
+    sceneIO("s6", 162.8, 201.2);
+    sceneIO("s7", 201.2, 236.0);
+    sceneIO("s8", 236.0, 271.3);
+    sceneIO("s9", 271.3, 306.3);
+    sceneIO("s10", 306.3, 348.8);
+    sceneIO("s11", 348.8, 397.8, true); // final scene holds to the end
+  }
+
+  /* ---------- generated DOM (deterministic, built synchronously) ---------- */
+
+  // scene 8: 100-user dot grid, 5 highlighted
+  (function buildDotGrid() {
+    var g = document.getElementById("s8-grid");
+    var on = { 14: 1, 23: 1, 47: 1, 68: 1, 85: 1 };
+    for (var i = 0; i < 100; i++) {
+      var d = document.createElement("div");
+      d.className = "dot" + (on[i] ? " on" : "");
+      g.appendChild(d);
+    }
+  })();
+
+  // scene 10: 12 coffee-shop customers in the queue
+  (function buildQueue() {
+    var q = document.getElementById("s10-queue");
+    for (var i = 0; i < 12; i++) {
+      var p = document.createElement("div");
+      p.className = "person";
+      p.innerHTML = '<div class="p-head"></div><div class="p-body"></div>';
+      q.appendChild(p);
+    }
+  })();
+
+  /* ================= TIMELINE ================= */
+
+  sceneIOAll();
+
+  /* ---- Scene 1 — The problem (0 – 29.7) ---- */
+  up("#s1-title", 0.3, { d: 0.7 });
+  draw("#s1 .uline path", 0.9, 0.7);
+  pop("#s1-p1", 1.2);
+  pop("#s1-p2", 1.9);
+  pop("#s1-p3", 2.6);
+  up("#s1-callers-label", 3.2, { d: 0.5 });
+  draw("#s1-wire path:nth-child(1)", 4.0, 0.6);
+  draw("#s1-wire path:nth-child(2)", 4.2, 0.6);
+  draw("#s1-wire path:nth-child(3)", 4.4, 0.6);
+  pop("#s1-desk", 4.8, { d: 0.6 });
+  ring("#s1-p1 .ring", 8.2);
+  ring("#s1-p2 .ring", 8.4);
+  ring("#s1-p3 .ring", 8.6);
+  stamp("#s1-sick", 9.2);
+  pop("#s1-bill", 13.6, { r: 5, d: 0.55 });
+  ring("#s1-p1 .ring", 18.0);
+  ring("#s1-p2 .ring", 18.2);
+  ring("#s1-p3 .ring", 18.4);
+  stickyIn("#s1-sticky", 21.6, 0);
+
+  /* ---- Scene 2 — The switchboard (29.7 – 52.9) ---- */
+  up("#s2-title", 29.9, { d: 0.6 });
+  draw("#s2 .uline path", 30.3, 0.6);
+  stickyIn("#s2-tenant", 31.0, -1);
+  pop("#s2-g1", 31.8, { d: 0.45 });
+  pop("#s2-g2", 33.2, { d: 0.45 });
+  pop("#s2-g3", 34.6, { d: 0.45 });
+  pop("#s2-g4", 36.0, { d: 0.45 });
+  pop("#s2-g5", 37.4, { d: 0.45 });
+  pop("#s2-g6", 38.8, { d: 0.45 });
+  // the request walks the rail below the boxes
+  tl.fromTo("#s2-dot", { x: 0, opacity: 0 }, { x: 0, opacity: 1, duration: 0.25 }, 41.3);
+  tl.to("#s2-dot", { x: 1560, duration: 2.4, ease: "none", immediateRender: false }, 41.55);
+  pop("#s2-term", 44.4, { d: 0.5 });
+  wipe("#s2-l1", 44.9, 0.8);
+  wipe("#s2-l2", 45.8, 0.7);
+  wipe("#s2-l3", 46.6, 0.9);
+  pop("#s2-resp", 47.6, { d: 0.5 });
+  mark("#s2-hl", 48.6, 0.5);
+  up("#s2-note", 49.4, { d: 0.5 });
+
+  /* ---- Scene 3 — Routing (52.9 – 81.4) ---- */
+  up("#s3-title", 53.1, { d: 0.6 });
+  draw("#s3 .uline path", 53.5, 0.6);
+  pop("#s3-roster", 54.3, { d: 0.55 });
+  pop("#s3-r1", 54.9, { d: 0.4 });
+  pop("#s3-r2", 55.3, { d: 0.4 });
+  pop("#s3-r3", 55.7, { d: 0.4 });
+  stickyIn("#s3-st-registry", 56.3, -1);
+  up("#s3-eq", 59.9, { d: 0.6 });
+  pop("#s3-w1", 61.6, { d: 0.4 });
+  pop("#s3-w2", 62.4, { d: 0.4 });
+  pop("#s3-w3", 63.2, { d: 0.4 });
+  pop("#s3-w4", 64.0, { d: 0.4 });
+  stickyIn("#s3-st-score", 64.8, 1);
+  pop("#s3-graph", 67.4, { d: 0.5 });
+  draw("#s3 .s3-raw", 67.7, 1.0);
+  draw("#s3 .s3-ewma", 68.5, 1.4);
+  stickyIn("#s3-st-ewma", 70.4, -1);
+  pop("#s3-win", 76.2, { r: -1.5, d: 0.55 });
+
+  /* ---- Scene 4 — Breaker, retry, hedge, fallback (81.4 – 129.9) ---- */
+  up("#s4-title", 81.6, { d: 0.6 });
+  draw("#s4 .uline path", 82.0, 0.6);
+  up("#s4-q1", 83.4, { d: 0.5 });
+  pop("#s4-b-closed", 84.2, { d: 0.4 });
+  stickyIn("#s4-st-breaker", 86.6, -1);
+  pop("#s4-tallies", 87.2, { d: 0.5 });
+  pop("#s4-b-open", 90.4, { d: 0.4 });
+  up("#s4-tallies-cap", 91.2, { d: 0.45 });
+  pop("#s4-b-half", 95.9, { d: 0.4 });
+  stickyIn("#s4-st-half", 96.6, 1);
+  pop("#s4-pr1", 97.4, { d: 0.35 });
+  pop("#s4-pr2", 97.8, { d: 0.35 });
+  up("#s4-q2", 100.9, { d: 0.5 });
+  draw("#s4-q2 .main", 101.5, 0.8);
+  tl.fromTo("#s4-q2 .jit", { opacity: 0 }, { opacity: 1, duration: 0.45, stagger: 0.22 }, 102.1);
+  stickyIn("#s4-st-jitter", 103.8, -1);
+  up("#s4-q3", 108.6, { d: 0.5 });
+  stickyIn("#s4-st-hedge", 110.2, 1);
+  tl.fromTo("#s4-ha", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" }, 112.2);
+  tl.fromTo("#s4-hb", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" }, 112.5);
+  tl.fromTo("#s4-hwin", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.4 }, 113.6);
+  tl.to("#s4-hb", { opacity: 0.45, duration: 0.4, immediateRender: false }, 114.6);
+  tl.fromTo("#s4-hlose", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 114.7);
+  up("#s4-q4", 116.4, { d: 0.5 });
+  pop("#s4-f1", 117.0, { d: 0.4 });
+  pop("#s4-f2", 117.5, { d: 0.4 });
+  pop("#s4-f3", 118.0, { d: 0.4 });
+  stickyIn("#s4-st-fb", 118.4, -1);
+  draw("#s4-fb path", 120.4, 0.7);
+  // highlighter banner
+  tl.fromTo("#s4-banner", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 123.2);
+  mark("#s4-hlbar", 123.5, 0.55);
+
+  /* ---- Scene 5 — Token bucket (129.9 – 162.8) ---- */
+  up("#s5-title", 130.1, { d: 0.6 });
+  draw("#s5 .uline path", 130.5, 0.6);
+  draw("#s5 .s5-outline", 131.0, 1.1);
+  stickyIn("#s5-st-bucket", 132.4, -1);
+  // tokens drip into the bucket; the level rises
+  tl.fromTo("#s5-water", { scaleY: 0.12, svgOrigin: "210 286" }, { scaleY: 1, duration: 4.4, ease: "power1.inOut" }, 133.4);
+  tl.fromTo("#s5-d1", { y: -30, opacity: 0 }, { keyframes: [{ opacity: 1, duration: 0.12 }, { y: 150, duration: 0.6, ease: "power1.in" }, { opacity: 0, duration: 0.08 }] }, 133.8);
+  tl.fromTo("#s5-d2", { y: -30, opacity: 0 }, { keyframes: [{ opacity: 1, duration: 0.12 }, { y: 150, duration: 0.6, ease: "power1.in" }, { opacity: 0, duration: 0.08 }] }, 134.9);
+  tl.fromTo("#s5-d3", { y: -30, opacity: 0 }, { keyframes: [{ opacity: 1, duration: 0.12 }, { y: 150, duration: 0.6, ease: "power1.in" }, { opacity: 0, duration: 0.08 }] }, 136.0);
+  tl.fromTo("#s5-d4", { y: -30, opacity: 0 }, { keyframes: [{ opacity: 1, duration: 0.12 }, { y: 150, duration: 0.6, ease: "power1.in" }, { opacity: 0, duration: 0.08 }] }, 137.1);
+  up("#s5-drip", 135.2, { d: 0.5 });
+  // request 1 spends a token
+  tl.fromTo("#s5-req1", { opacity: 0, x: -40 }, { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" }, 137.4);
+  tl.fromTo("#s5-req1ok", { opacity: 0, x: -18 }, { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" }, 138.6);
+  // request 2 arrives to an empty bucket: 429 + Retry-After
+  tl.fromTo("#s5-req2", { opacity: 0, x: -40 }, { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" }, 140.0);
+  stamp("#s5-429", 140.6);
+  stickyIn("#s5-st-429", 141.4, 1);
+  tl.fromTo("#s5-ra", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.45 }, 142.6);
+  stickyIn("#s5-st-ra", 143.6, -1);
+  up("#s5-burst", 148.8, { d: 0.5 });
+  up("#s5-redis", 154.8, { d: 0.5 });
+  stickyIn("#s5-st-redis", 155.8, 1);
+
+  /* ---- Scene 6 — Semantic cache (162.8 – 201.2) ---- */
+  up("#s6-title", 163.1, { d: 0.6 });
+  draw("#s6 .uline path", 163.5, 0.6);
+  stickyIn("#s6-st-cache", 163.9, 1);
+  up("#s6-tier1", 166.6, { d: 0.5 });
+  pop("#s6-req", 167.0, { d: 0.4 });
+  pop("#s6-fp", 167.4, { d: 0.45 });
+  pop("#s6-hit", 169.6, { d: 0.45 });
+  up("#s6-tier2", 171.3, { d: 0.5 });
+  pop("#s6-q1", 171.8, { d: 0.4 });
+  pop("#s6-q2", 172.2, { d: 0.4 });
+  stickyIn("#s6-st-emb", 174.0, -1);
+  draw("#s6 .s6-v1", 174.8, 0.7);
+  draw("#s6 .s6-v2", 175.2, 0.7);
+  draw("#s6 .s6-arc", 176.0, 0.5);
+  stickyIn("#s6-st-cos", 176.6, 1);
+  tl.fromTo("#s6-banner", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 180.2);
+  mark("#s6-hlbar", 180.5, 0.55);
+  tl.fromTo("#s6-flag", { opacity: 0, y: 16, rotation: 1.5 }, { opacity: 1, y: 0, rotation: -1, duration: 0.5, ease: "power2.out" }, 186.4);
+  stickyIn("#s6-st-ttl", 190.4, -1);
+
+  /* ---- Scene 7 — Cost autopilot (201.2 – 236.0) ---- */
+  up("#s7-title", 201.4, { d: 0.6 });
+  draw("#s7 .uline path", 201.8, 0.6);
+  up("#s7-meter", 202.4, { d: 0.5 });
+  tl.fromTo("#s7-needle", { rotation: -62 }, { rotation: 14, duration: 1.1, ease: "power2.inOut", transformOrigin: "50% 100%" }, 203.2);
+  stickyIn("#s7-st-budget", 206.9, -1);
+  draw("#s7 .s7-soft", 209.4, 0.6);
+  draw("#s7 .s7-hard", 209.9, 0.6);
+  stickyIn("#s7-st-burn", 210.9, 1);
+  draw("#s7 .s7-proj", 211.5, 1.8);
+  // the autopilot flips the downgrade switch; the needle bends back down
+  tl.fromTo("#s7-lever", { rotation: -26 }, { rotation: 26, duration: 0.3, ease: "power3.in", transformOrigin: "50% 100%" }, 215.4);
+  tl.fromTo("#s7-switch", { opacity: 0.35 }, { opacity: 1, duration: 0.4, immediateRender: false }, 215.4);
+  tl.to("#s7-needle", { rotation: -34, duration: 0.8, ease: "back.out(1.4)", immediateRender: false }, 215.8);
+  up("#s7-ledger", 222.3, { d: 0.5 });
+  pop("#s7-l1", 222.8, { d: 0.35 });
+  pop("#s7-l2", 223.15, { d: 0.35 });
+  pop("#s7-l3", 223.5, { d: 0.35 });
+  pop("#s7-l4", 223.85, { d: 0.35 });
+  stickyIn("#s7-st-ledger", 225.3, -1);
+
+  /* ---- Scene 8 — Feature flags (236.0 – 271.3) ---- */
+  up("#s8-title", 236.2, { d: 0.6 });
+  draw("#s8 .uline path", 236.6, 0.6);
+  tl.fromTo("#s8-grid .dot", { opacity: 0, scale: 0, transformOrigin: "50% 50%" },
+    { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)", stagger: { each: 0.008, from: "start" } }, 237.2);
+  tl.fromTo("#s8-grid .dot.on", { scale: 1 }, { scale: 1.45, duration: 0.3, yoyo: true, repeat: 1, ease: "power2.inOut", immediateRender: false }, 243.4);
+  up("#s8-gridnote", 243.6, { d: 0.5 });
+  stickyIn("#s8-st-roll", 241.0, -1);
+  stickyIn("#s8-st-hash", 245.9, 1);
+  stickyIn("#s8-st-sticky", 249.4, -1);
+  up("#s8-kill", 251.8, { d: 0.5 });
+  tl.fromTo("#s8-lever", { rotation: -26 }, { rotation: 26, duration: 0.28, ease: "power3.in", transformOrigin: "50% 100%" }, 252.1);
+  up("#s8-shadow", 257.0, { d: 0.5 });
+  stamp("#s8-never", 260.6);
+  tl.fromTo("#s8-banner", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 262.0);
+  mark("#s8-hlbar", 262.3, 0.55);
+
+  /* ---- Scene 9 — Identity, receipts, erasure (271.3 – 306.3) ---- */
+  up("#s9-title", 271.5, { d: 0.6 });
+  draw("#s9 .uline path", 271.9, 0.6);
+  up("#s9-cell1", 272.2, { d: 0.5 });
+  stickyIn("#s9-st-bearer", 273.4, -1);
+  up("#s9-cell2", 275.8, { d: 0.5 });
+  stickyIn("#s9-st-jwt", 277.4, 1);
+  up("#s9-cell3", 281.4, { d: 0.5 });
+  stickyIn("#s9-st-sha", 283.4, -1);
+  up("#s9-cell4", 288.0, { d: 0.5 });
+  draw("#s9-rot path", 288.4, 0.7);
+  stickyIn("#s9-st-rot", 289.4, 1);
+  up("#s9-cell5", 291.8, { d: 0.5 });
+  // the eraser sweeps the tenant's rows; the audit note lands
+  tl.fromTo("#s9-g1", { opacity: 1 }, { opacity: 0.12, duration: 0.3, immediateRender: false }, 292.5);
+  tl.fromTo("#s9-g2", { opacity: 1 }, { opacity: 0.12, duration: 0.3, immediateRender: false }, 292.85);
+  tl.fromTo("#s9-g3", { opacity: 1 }, { opacity: 0.12, duration: 0.3, immediateRender: false }, 293.2);
+  tl.fromTo("#s9-eraser", { x: 0, opacity: 0 }, { x: 0, opacity: 1, duration: 0.3 }, 292.3);
+  tl.to("#s9-eraser", { x: 300, duration: 1.1, ease: "power1.inOut", immediateRender: false }, 292.6);
+  tl.to("#s9-eraser", { opacity: 0, duration: 0.3, immediateRender: false }, 294.0);
+  tl.fromTo("#s9-audit", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.45 }, 294.0);
+  stickyIn("#s9-st-gdpr", 294.4, -1);
+
+  /* ---- Scene 10 — The measured numbers (306.3 – 348.8) ---- */
+  up("#s10-title", 306.5, { d: 0.6 });
+  draw("#s10 .uline path", 306.9, 0.6);
+  pop("#s10-board", 307.4, { d: 0.6 });
+  pop("#s10-vu", 308.4, { d: 0.5 });
+  up("#s10-num-err", 314.8, { d: 0.4 });
+  // measured counters count up to the repo's load-profile numbers
+  var cnt = { req: 0, rps: 0 };
+  var elReq = document.getElementById("s10-num-req");
+  var elRps = document.getElementById("s10-num-rps");
+  tl.to(cnt, {
+    req: 2926, duration: 2.4, ease: "power1.out",
+    onUpdate: function () { elReq.textContent = Math.round(cnt.req).toLocaleString("en-US"); }
+  }, 312.4);
+  tl.to(cnt, {
+    rps: 484, duration: 2.4, ease: "power1.out",
+    onUpdate: function () { elRps.textContent = Math.round(cnt.rps).toLocaleString("en-US"); }
+  }, 312.7);
+  stickyIn("#s10-st-rps", 316.6, -1);
+  tl.fromTo("#s10-queue .person", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.35, stagger: 0.07 }, 319.6);
+  up("#s10-p50mark", 324.8, { d: 0.45 });
+  stickyIn("#s10-st-pct", 325.6, 1);
+  tl.fromTo("#s10-p95", { opacity: 0, scaleX: 0.4, transformOrigin: "left center" }, { opacity: 1, scaleX: 1, duration: 0.6, ease: "power2.out" }, 329.2);
+  up("#s10-p95lab", 329.5, { d: 0.45 });
+  up("#s10-p99lab", 334.2, { d: 0.45 });
+  tl.fromTo("#s10-closing", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 338.4);
+  draw("#s10-closing path", 338.7, 0.6);
+
+  /* ---- Scene 11 — Recap (348.8 – 397.8) ---- */
+  up("#s11-title", 349.0, { d: 0.6 });
+  draw("#s11 .uline path", 349.4, 0.6);
+  var items = [350.0, 353.8, 357.5, 362.0, 364.4, 366.8, 369.5, 372.0, 378.0];
+  items.forEach(function (t, i) {
+    up("#s11-item" + (i + 1), t, { d: 0.4 });
+    draw("#s11-item" + (i + 1) + " path", t + 0.15, 0.35);
+  });
+  // beat-locked: 384.86s (strong cue 78.5647 into music-b, which starts at 306.3)
+  pop("#s11-final", 384.86, { r: -1, d: 0.7 });
+
+  /* ---------- register the single paused timeline ---------- */
+  window.__timelines["aegisgate-lecture"] = tl;
+})();
+</script>
+</body>
+</html>
