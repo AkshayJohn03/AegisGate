@@ -1,5 +1,8 @@
 # AegisGate — Self-Healing LLM Gateway & Control Plane
 
+[![▶ whiteboard explainer video · 6m38s](https://img.shields.io/badge/%E2%96%B6_whiteboard_explainer-6m38s-E8B44A?style=flat-square&logo=googleplay&logoColor=white)](brag-output/brag.mp4)
+
+
 AegisGate is a production-shaped **LLM gateway and control plane**: one process that sits between
 your application and a dozen model providers and makes the fleet behave like a single reliable,
 budgeted, observable LLM. It unifies the pieces most teams end up hand-rolling separately:
