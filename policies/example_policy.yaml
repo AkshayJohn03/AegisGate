@@ -1,0 +1,71 @@
+# AegisGate — example agent tool & MCP firewall policy.
+#
+# Load it with:
+#   AEGISGATE_TOOLS_FIREWALL_ENABLED=true
+#   AEGISGATE_TOOLS_POLICY_PATH=policies/example_policy.yaml
+#
+# Shape: global layer toggles (`rules`), optional per-tool schemas and
+# per-tool extras, plus tool allowlist/denylist and per-rule action
+# overrides. Every layer is deterministic — no network, no LLM, no DNS.
+
+version: 1
+
+rules:                     # global layer toggles (all default true)
+  schema_validation: true
+  dangerous_commands: true
+  base64_rescan: true
+  ssrf: true
+  path_traversal: true
+  privilege_escalation: true
+  allowlist_denylist: true
+
+# Only these tools may be called at all (empty list = allow all tools).
+tool_allowlist:
+  - run_query
+  - browse_web
+  - run_terminal
+  - search_docs
+
+tool_denylist: []          # e.g. [send_admin_email]
+
+# Allowed URL schemes for any tool (per-tool override below).
+allowed_schemes: [http, https]
+
+tools:
+  # Read-only SQL: SELECT/WITH pass, DROP/INSERT/DELETE/... are denied by the
+  # sql_write_blocked rule, and dangerous SQL (DROP DATABASE) also trips the
+  # dangerous_command pattern layer.
+  run_query:
+    sql_read_only: true
+    schema:
+      required: [sql]
+      properties:
+        sql:
+          type: string
+        database:
+          type: string
+          enum: [analytics, reports, staging]
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+
+  # Web tools: SSRF layer blocks private ranges, loopback, cloud metadata
+  # (169.254.169.254), file://-style schemes and localhost bypass encodings.
+  browse_web:
+    allowed_schemes: [https]
+
+  # Terminal access: dangerous commands (rm -rf, mkfs, sudo, fork bombs,
+  # curl|bash, registry edits) are denied; file arguments must stay under
+  # the allowlisted roots.
+  run_terminal:
+    allowed_roots: ["/workspace", "/tmp"]
+
+  search_docs: {}
+
+# Per-rule action overrides. Default for every rule is "deny".
+# Options per rule: deny | sanitize | log_only
+actions:
+  # Demonstrate sanitize mode: a chmod 777 in an argument gets the argument
+  # value redacted and the call proceeds, instead of the call being denied.
+  dangerous_command: deny
