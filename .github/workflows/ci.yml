@@ -32,7 +32,7 @@ jobs:
           cyclonedx-py requirements --only-direct -o sbom.json || true
       - name: Load profile artifact
         run: python scripts/load_profile.py --vus 20 --seconds 5 --out load_profile_ci.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: load-profile
           path: load_profile_ci.json
