@@ -380,8 +380,13 @@ def create_app(
             tool = body.get("tool") or {}
             tool_name = tool.get("name", "") if isinstance(tool, dict) else str(tool)
         else:
-            tool_name = body.get("tool_name", "")
-        arguments = body.get("arguments") or {}
+            # accept the shapes a developer naturally reaches for first:
+            # {"tool": "bash"} and {"tool_name": "bash"} and {"tool": {"name": ...}}
+            raw_tool = body.get("tool_name") or body.get("tool") or ""
+            tool_name = (
+                raw_tool.get("name", "") if isinstance(raw_tool, dict) else str(raw_tool)
+            )
+        arguments = body.get("arguments") or body.get("args") or {}
         if not tool_name:
             return JSONResponse(
                 status_code=400,
