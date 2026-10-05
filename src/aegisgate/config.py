@@ -64,6 +64,13 @@ class AegisGateSettings(BaseSettings):
     # --- Fallback ----------------------------------------------------------
     max_fallback_attempts: int = 3
 
+    # --- Agent tool & MCP firewall -----------------------------------------
+    tools_firewall_enabled: bool = False
+    tools_policy_path: str | None = None  # YAML policy file (per-tool rules)
+
+    # --- PII round-trip ------------------------------------------------------
+    pii_mode: str = "off"  # "off" | "anonymize"
+
     # --- Server ------------------------------------------------------------
     host: str = "0.0.0.0"
     port: int = 8000

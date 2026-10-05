@@ -25,6 +25,15 @@ class ToolSpec(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
+class ToolCall(BaseModel):
+    """A tool invocation produced by the model (OpenAI function-call shape,
+    arguments already parsed from JSON)."""
+
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    id: str = ""
+
+
 class ChatRequest(BaseModel):
     """Normalized chat request (OpenAI-compatible subset)."""
 
@@ -54,6 +63,7 @@ class ChatResponse(BaseModel):
     usage: Usage = Field(default_factory=Usage)
     latency_ms: float | None = None
     request_id: str | None = None
+    tool_calls: list[ToolCall] | None = None  # model-requested tool invocations
 
 
 class ChatChunk(BaseModel):

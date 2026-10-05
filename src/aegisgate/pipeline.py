@@ -29,6 +29,8 @@ from aegisgate.cost.meter import Budget, CostMeter
 from aegisgate.flags import FeatureFlags
 from aegisgate.gateway.metrics import Metrics
 from aegisgate.llm.base import ChatRequest, ChatResponse, LLMClient, Usage
+from aegisgate.mcp_firewall import ToolFirewall, load_policy
+from aegisgate.pii import PIIRoundTrip
 from aegisgate.ratelimit import InMemoryRateLimitStore, RateLimiter, TokenBucketConfig
 from aegisgate.router.breaker import BreakerRegistry, CircuitBreakerConfig
 from aegisgate.router.fallback import AllCandidatesFailedError, AttemptRecord, FallbackChain
@@ -72,10 +74,16 @@ class PipelineResult:
     cost_usd: float = 0.0
     spans: list[dict[str, Any]] = field(default_factory=list)
     logs: list[dict[str, Any]] = field(default_factory=list)
+    tool_firewall: list[dict[str, Any]] | None = None
 
     @property
     def ok(self) -> bool:
         return self.error is None and self.response is not None
+
+    @property
+    def tool_firewall_blocked(self) -> bool:
+        """True when the tool firewall denied at least one model tool call."""
+        return any(d.get("verdict") == "deny" for d in (self.tool_firewall or []))
 
 
 @dataclass
@@ -142,6 +150,11 @@ class GatewayPipeline:
             base_delay_s=s.retry_base_delay_s,
             max_delay_s=s.retry_max_delay_s,
         )
+        self.firewall: ToolFirewall | None = None
+        if s.tools_firewall_enabled:
+            config = load_policy(s.tools_policy_path) if s.tools_policy_path else None
+            self.firewall = ToolFirewall(config)
+        self.pii = PIIRoundTrip() if s.pii_mode == "anonymize" else None
         self._log = self.log_sink or (lambda record: logger.info(str(record)))
 
     # -- instrumentation ------------------------------------------------------
@@ -313,6 +326,26 @@ class GatewayPipeline:
                         model=request.model,
                     )
 
+            # 1b. PII anonymize (optional) ------------------------------------------
+            # Runs before the cache lookup so cached entries and everything
+            # downstream (autopilot, shadow, provider) only ever see tokens.
+            pii_map: dict[str, str] = {}
+            if self.pii is not None:
+                async with self._stage("pii_anonymize", spans, trace_id):
+                    redactions = 0
+                    pseudonymized = []
+                    for message in request.messages:
+                        sanitized, mapping = self.pii.pseudonymize(message.content)
+                        redactions += len(mapping)
+                        pii_map.update(mapping)
+                        pseudonymized.append(message.model_copy(update={"content": sanitized}))
+                    if redactions:
+                        request = request.model_copy(update={"messages": pseudonymized})
+                        self.metrics.inc("aegisgate_pii_redactions_total", value=redactions)
+                    self._log_record(
+                        logs, "pii", "request pseudonymized", redactions=redactions
+                    )
+
             # 3. cache lookup ---------------------------------------------------------
             family = self.registry.get(request.model).family
             async with self._stage("cache_lookup", spans, trace_id):
@@ -320,7 +353,10 @@ class GatewayPipeline:
 
             if hit is not None:
                 self.metrics.inc("aegisgate_cache_hits_total", {"tier": hit.tier})
-                result.response = hit.response.model_copy()
+                cached_response = hit.response.model_copy()
+                if self.pii is not None and pii_map:
+                    cached_response.content = self.pii.restore(cached_response.content, pii_map)
+                result.response = cached_response
                 result.served_by = f"cache:{hit.tier}"
                 result.cache_tier = hit.tier
                 self._log_record(
@@ -388,6 +424,48 @@ class GatewayPipeline:
             result.attempts = outcome.attempts
             result.hedged = outcome.hedged
 
+            # 6b. agent tool & MCP firewall (optional) --------------------------------
+            # Inspect tool calls the model produced before anything downstream
+            # (or the client) acts on them. A deny replaces the tool output with
+            # a refusal note; allows pass through untouched.
+            if self.firewall is not None and response.tool_calls:
+                async with self._stage("tool_firewall", spans, trace_id):
+                    decisions = [
+                        self.firewall.inspect_tool_call(
+                            call.name,
+                            call.arguments,
+                            {"tenant": tenant_id, "trace_id": trace_id},
+                        )
+                        for call in response.tool_calls
+                    ]
+                    result.tool_firewall = [d.model_dump() for d in decisions]
+                    for decision in decisions:
+                        self.metrics.inc(
+                            "aegisgate_tool_firewall_total", {"verdict": decision.verdict}
+                        )
+                    denied = next((d for d in decisions if d.verdict == "deny"), None)
+                    if denied is not None:
+                        refusal = (
+                            f"[aegisgate] Tool call '{denied.tool_name}' was denied by the "
+                            f"agent tool firewall.\n{self.firewall.explain(denied)}"
+                        )
+                        response = response.model_copy(
+                            update={"content": refusal, "tool_calls": None}
+                        )
+                        result.response = response
+                        self._log_record(
+                            logs,
+                            "tool_firewall",
+                            "tool call denied",
+                            tool=denied.tool_name,
+                            risk=denied.risk,
+                        )
+                    else:
+                        self._log_record(
+                            logs, "tool_firewall",
+                            "tool calls inspected", count=len(decisions),
+                        )
+
             # 7. shadow mode ---------------------------------------------------------------
             async with self._stage("shadow", spans, trace_id):
                 await self._mirror_shadow(request, outcome.served_by, response, logs)
@@ -414,6 +492,17 @@ class GatewayPipeline:
             # 9. cache store -----------------------------------------------------------------
             async with self._stage("cache_store", spans, trace_id):
                 self.cache.store(request, family, response)
+
+            # 9b. PII restore (optional) -------------------------------------------------------
+            # After the cache store: the cache keeps pseudonymized content, the
+            # caller's UI gets the original values back.
+            if self.pii is not None and pii_map:
+                async with self._stage("pii_restore", spans, trace_id):
+                    response = response.model_copy(
+                        update={"content": self.pii.restore(response.content, pii_map)}
+                    )
+                    result.response = response
+                self._log_record(logs, "pii", "response restored", tokens=len(pii_map))
 
             self.metrics.inc(
                 "aegisgate_requests_total", self._tags(tenant_id, request.model) | {"status": "ok"}
@@ -445,8 +534,9 @@ class GatewayPipeline:
     ) -> AsyncIterator[dict[str, Any]]:
         """Streaming variant. Preflight stages run up front; execution streams
         from the first available candidate. Hedging and retry are intentionally
-        disabled for streams (partial outputs cannot be safely replayed) — a
-        documented trade-off in the README."""
+        disabled for streams (partial outputs cannot be safely replayed), and
+        the tool-firewall auto-inspect plus PII round-trip currently apply to
+        the non-streaming path only — a documented trade-off in the README."""
         trace_id = uuid4().hex[:16]
         spans: list[dict[str, Any]] = []
         logs: list[dict[str, Any]] = []

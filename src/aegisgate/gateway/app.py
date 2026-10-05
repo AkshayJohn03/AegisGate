@@ -2,6 +2,8 @@
 
 Endpoints:
 - POST /v1/chat/completions  (stream + non-stream, Bearer auth -> tenant)
+- POST /v1/tools/inspect     (agent tool firewall: {tool_name, arguments, context})
+- POST /v1/mcp/inspect       (MCP-shaped firewall: {"tool": {"name"}, "arguments"})
 - GET  /v1/models            (registry listing)
 - GET  /health
 - GET  /metrics              (Prometheus text format)
@@ -105,6 +107,17 @@ def _completion_payload(result: PipelineResult) -> dict[str, Any]:
     response = result.response
     assert response is not None
     created = int(time.time())
+    message: dict[str, Any] = {"role": "assistant", "content": response.content}
+    if response.tool_calls and not result.tool_firewall_blocked:
+        # OpenAI-shaped passthrough of allowed tool calls
+        message["tool_calls"] = [
+            {
+                "id": call.id or f"call_{index}",
+                "type": "function",
+                "function": {"name": call.name, "arguments": json.dumps(call.arguments)},
+            }
+            for index, call in enumerate(response.tool_calls)
+        ]
     return {
         "id": f"chatcmpl-{result.trace_id}",
         "object": "chat.completion",
@@ -113,7 +126,7 @@ def _completion_payload(result: PipelineResult) -> dict[str, Any]:
         "choices": [
             {
                 "index": 0,
-                "message": {"role": "assistant", "content": response.content},
+                "message": message,
                 "finish_reason": response.finish_reason,
             }
         ],
@@ -130,6 +143,8 @@ def _completion_payload(result: PipelineResult) -> dict[str, Any]:
             "attempts": [a.__dict__ for a in result.attempts],
             "cost_usd": round(result.cost_usd, 6),
             "trace_id": result.trace_id,
+            "tool_firewall": result.tool_firewall or [],
+            "tool_firewall_blocked": result.tool_firewall_blocked,
         },
     }
 
@@ -328,6 +343,54 @@ def create_app(
         payload = _completion_payload(result)
         payload["aegisgate"]["tenant"] = tenant
         return JSONResponse(status_code=200, content=payload)
+
+    @app.post("/v1/tools/inspect")
+    async def tools_inspect(request: Request) -> Any:
+        """Inspect one model-issued tool call: body {tool_name, arguments, context}."""
+        denied = await _run_inspect(request, mcp_shape=False)
+        return denied
+
+    @app.post("/v1/mcp/inspect")
+    async def mcp_inspect(request: Request) -> Any:
+        """MCP-shaped inspect: body {"tool": {"name": ...}, "arguments": {...}}."""
+        denied = await _run_inspect(request, mcp_shape=True)
+        return denied
+
+    async def _run_inspect(request: Request, *, mcp_shape: bool) -> Any:
+        try:
+            _tenant_from_headers(request, settings, auth_provider)
+        except PermissionError as exc:
+            return JSONResponse(
+                status_code=401,
+                content={"error": {"message": str(exc), "type": "invalid_api_key"}},
+            )
+        if pipeline.firewall is None:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": {
+                        "message": "tools firewall disabled "
+                        "(set AEGISGATE_TOOLS_FIREWALL_ENABLED=true)",
+                        "type": "firewall_disabled",
+                    }
+                },
+            )
+        body = await request.json()
+        if mcp_shape:
+            tool = body.get("tool") or {}
+            tool_name = tool.get("name", "") if isinstance(tool, dict) else str(tool)
+        else:
+            tool_name = body.get("tool_name", "")
+        arguments = body.get("arguments") or {}
+        if not tool_name:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": {"message": "missing tool name", "type": "invalid_request_error"}
+                },
+            )
+        decision = pipeline.firewall.inspect_tool_call(tool_name, arguments, body.get("context"))
+        return JSONResponse(status_code=200, content=decision.model_dump())
 
     @app.get("/v1/models")
     async def list_models() -> dict[str, Any]:
