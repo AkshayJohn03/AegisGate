@@ -12,6 +12,11 @@ budgeted, observable LLM. It unifies the pieces most teams end up hand-rolling s
 - **Rate limiting** — token buckets per `(tenant, model)` behind a swappable store Protocol.
 - **Semantic caching** — a two-tier exact-hash + embedding-cosine cache with skip rules and
   hit/miss/token-savings metrics.
+- **The agent tool & MCP firewall** — deterministic inspection of every tool call a model
+  produces (OpenAI function calls, MCP `tools/call`): malicious SQL inside tool args, SSRF via
+  web tools, `rm -rf` through terminal tools, path traversal, privilege escalation.
+- **PII round-trip** — optional request pseudonymization (`alice@corp.com` → `Email_1`) with
+  faithful restore on the way back to your UI, so providers never see raw PII.
 - **Cost autopilot** — per-tenant token/cost metering, soft/hard budgets, month-end burn
   projection, and a policy engine that *downgrades routing* under budget pressure.
 - **Feature flags** — deterministic hash-bucket rollouts, sticky A/B assignment, per-model kill
@@ -35,7 +40,62 @@ the network, and time is injected — the entire control plane is testable with 
 - **Never an experiment on everyone:** new models roll out via **feature flags** — 5% of users first, sticky per user, with a big red kill switch and a "shadow mode" that runs the new model quietly alongside and records how it *would* have answered, without ever showing it to a user.
 - **Heals itself:** a health monitor watches error rates (EWMA smoothing, so one blip ≠ panic) and quarantines failing providers; a **DocHealer** bot notices when the API documentation drifts from the actual API and drafts validated doc patches.
 
-**Measured outcomes:** 91 automated tests pass offline in ~1.5 seconds — including the full gateway request lifecycle (streaming, auth, rate-limit rejections), circuit-breaker open→half-open→recovery transitions, cache hits on semantically-identical questions, autopilot downgrades under simulated budget burn, deterministic 5%-rollouts, and the doc-healer detecting and patching real drift. Every stage emits a span for the ForensiQ forensics tool, so when something goes wrong at 2am, the evidence is already on disk.
+**Measured outcomes:** 175 automated tests pass offline in ~2.5 seconds — including the full gateway request lifecycle (streaming, auth, rate-limit rejections), circuit-breaker open→half-open→recovery transitions, cache hits on semantically-identical questions, autopilot downgrades under simulated budget burn, deterministic 5%-rollouts, the doc-healer detecting and patching real drift, the tool firewall blocking planted `rm -rf`/SSRF/base64-wrapped tool calls while waving benign ones through, and the PII round-trip proving providers never see raw emails or card numbers. Every stage emits a span for the ForensiQ forensics tool, so when something goes wrong at 2am, the evidence is already on disk.
+
+## The Agent Tool & MCP Firewall
+
+**Why chat-only gateways are insufficient in 2026.** Chat completions are no longer where the risk
+lives. Agents now *execute*: they call SQL tools, web fetchers, terminals, and MCP servers with
+arguments the model invented. A gateway that only inspects the chat stream will happily relay
+`{"tool": "run_query", "arguments": {"sql": "DROP TABLE users"}}` or
+`{"tool": "browse_web", "arguments": {"url": "http://169.254.169.254/latest/meta-data/"}}` — and
+prompt injection inside a fetched web page becomes `rm -rf` on your app server, with no record of
+the tool call anywhere. AegisGate's firewall sits between the model's tool calls and their
+execution and answers one question deterministically: **may this call run?**
+
+Six policy layers, each toggleable, all offline (regex/parse-based — no network, no LLM, no DNS):
+
+| Layer | Catches |
+| --- | --- |
+| Argument schema validation | missing required keys, wrong types, enum/range violations |
+| Dangerous-command detection | `rm -rf`, `mkfs`, `DROP TABLE/DATABASE`, `sudo`, `chmod 777`, `curl\|bash`, `wget\|sh`, fork bombs, `shutdown`, Windows registry edits — **including base64-wrapped variants** (decode + rescan) |
+| SSRF | private ranges (10/8, 172.16–31/12, 192.168/16), loopback, cloud metadata `169.254.169.254`, `file://`/`gopher://` schemes, bypass encodings (`0.0.0.0`, `[::1]`, decimal-IP `2130706433`) |
+| Path traversal | `../`, null bytes, absolute paths outside allowlisted roots |
+| Privilege escalation | `delete_all`, `drop`, `grant`, `admin`, `impersonate` in tool names/args vs per-tool exemptions |
+| Tool allowlist/denylist | the model may only call tools you named |
+
+Every rule's action is configurable per rule id: `deny` (default), `sanitize` (redact the
+offending argument value and let the call proceed), or `log_only` (record and allow). Each
+decision carries a `verdict` (allow/deny/sanitize), machine-readable `reasons`, a 0–100 `risk`
+score, `sanitized_args`, and `explain()` returns a human-readable justification.
+
+**Quickstart — three lines of YAML and one curl.** `policies/example_policy.yaml` ships with a
+read-only SQL tool (`SELECT` passes, `DROP` dies), an SSRF-guarded web tool, and a terminal tool
+that keeps `rm -rf` out of your filesystem:
+
+```yaml
+# policies/example_policy.yaml (excerpt)
+tool_allowlist: [run_query, browse_web, run_terminal]
+tools:
+  run_query:    {sql_read_only: true, schema: {required: [sql]}}
+  run_terminal: {allowed_roots: ["/workspace", "/tmp"]}
+```
+
+```bash
+AEGISGATE_TOOLS_FIREWALL_ENABLED=true \
+AEGISGATE_TOOLS_POLICY_PATH=policies/example_policy.yaml python -m aegisgate.gateway.app &
+
+curl -s localhost:8000/v1/tools/inspect \
+  -H "Authorization: Bearer sk-demo" -H "Content-Type: application/json" \
+  -d '{"tool_name":"run_query","arguments":{"sql":"DROP TABLE users"}}'
+# → {"verdict":"deny","risk":70,"reasons":[...],"tool_name":"run_query",...}
+```
+
+`POST /v1/mcp/inspect` accepts MCP-shaped bodies (`{"tool": {"name": "..."}, "arguments": {...}}`)
+for Model Context Protocol servers — same decision object. With the firewall enabled, chat
+completions are **auto-inspected** too: tool calls the model produces inside a response are
+checked before your code executes them. Allowed calls pass through in OpenAI `tool_calls` shape;
+a denied call is replaced with a refusal note and flagged under `aegisgate.tool_firewall_blocked`.
 
 ## Architecture
 
@@ -101,6 +161,28 @@ python -m ruff check src tests
 Point `AEGISGATE_LLM_MODE=openai` at any OpenAI-compatible server (OpenAI, vLLM, Together,
 Ollama's shim) with `AEGISGATE_OPENAI_BASE_URL` + `AEGISGATE_OPENAI_API_KEY` to proxy real traffic.
 
+## Drop-in base URL
+
+AegisGate is OpenAI-shaped end to end, so adoption is a one-line change in any existing
+integration:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8080/v1",  # was "https://api.openai.com/v1"
+    api_key="sk-demo",                    # your AegisGate tenant token
+)
+resp = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "hi"}],
+)
+```
+
+Responses carry the standard `chat.completion` object (`id`, `choices`, `usage`) plus an
+`aegisgate` field with routing, cache, cost, trace, and tool-firewall decisions — your existing
+parsing code keeps working untouched.
+
 ## Module map
 
 ```
@@ -108,6 +190,8 @@ src/aegisgate/
 ├── clock.py                  Clock Protocol + SystemClock/ManualClock (injected everywhere)
 ├── config.py                 pydantic-settings (AEGISGATE_* env vars, .env)
 ├── pipeline.py               orchestration + spans/logs instrumentation
+├── mcp_firewall.py           agent tool & MCP firewall: ToolFirewall, YAML policy loader
+├── pii.py                    PII round-trip: pseudonymize/restore, LRU store Protocol
 ├── ratelimit.py              token bucket, RateLimitStore Protocol, per (tenant, model)
 ├── flags.py                  rollouts, sticky A/B, kill switches, shadow, JSON persistence
 ├── llm/
@@ -210,6 +294,15 @@ echo implementation; time sits behind a `Clock`; rate-limit storage sits behind 
 pytest suite runs the *real* pipeline and the *real* FastAPI app over ASGI — no network, no keys,
 no sleeps.
 
+**The tool firewall is deny-by-pattern, not deny-by-anomaly.** Every rule is a deterministic
+regex/parse check, so a verdict is reproducible and auditable — the same input always yields the
+same decision, which is what a security control needs. The cost: zero-day payload shapes a pattern
+never anticipated will pass. That is why layers are redundant (a base64-wrapped `rm -rf` still
+trips the decode+rescan), why sanitize/log-only actions exist for tuning false positives, and why
+`explain()` prints exactly which pattern matched which argument. SSRF host checks are lexical
+(`ipaddress` parsing, no DNS) for the same determinism reason; a DNS-resolving variant slots in
+behind the same `inspect_tool_call` signature.
+
 ## Configuration reference
 
 | Env var | Default | Meaning |
@@ -229,6 +322,9 @@ no sleeps.
 | `AEGISGATE_DAILY_SOFT/HARD`, `AEGISGATE_MONTHLY_SOFT/HARD` | 5/10/50/100 | Per-tenant budgets (USD) |
 | `AEGISGATE_FLAGS_PATH` | — | JSON persistence path for flags |
 | `AEGISGATE_REGISTRY_PATH` | bundled | Custom model registry YAML |
+| `AEGISGATE_TOOLS_FIREWALL_ENABLED` | `false` | Enable the agent tool & MCP firewall |
+| `AEGISGATE_TOOLS_POLICY_PATH` | — | YAML policy file (see `policies/example_policy.yaml`) |
+| `AEGISGATE_PII_MODE` | `off` | `off` or `anonymize` (pseudonymize requests, restore responses) |
 
 ## Testing
 
@@ -238,8 +334,14 @@ exact and semantic cache hits; temperature/tool skip rules; TTL expiry and LRU e
 tier downgrade under simulated budget pressure (ManualClock); deterministic rollouts and kill
 switches; hedging winner selection and loser cancellation; retry jitter bounds and 4xx fail-fast;
 OpenAI-compatible client against `httpx.MockTransport` (SSE parse, retry-on-500); end-to-end
-DocHealer drift → patch; health monitor auto-quarantine; and the full gateway lifecycle over ASGI
-(non-stream, SSE stream, models, health, metrics, 401/429 paths).
+DocHealer drift → patch; health monitor auto-quarantine; the full gateway lifecycle over ASGI
+(non-stream, SSE stream, models, health, metrics, 401/429 paths); the tool firewall firing every
+rule on planted dangerous calls (SQLi in args, SSRF metadata URLs, `rm -rf`, traversal, priv-esc,
+base64-wrapped payloads) while 6+ benign fixtures pass, sanitize-mode redaction, schema
+violations, YAML policy loading, both `/v1/tools/inspect` and `/v1/mcp/inspect` endpoints, and
+auto-inspect of chat tool_calls; and the PII round-trip (detection incl. Luhn cards, cross-call
+token consistency, restore fidelity, LRU bounds, and the anonymize pipeline stage proving the
+provider sees only pseudonyms).
 
 ## Production notes
 
@@ -267,7 +369,12 @@ DocHealer drift → patch; health monitor auto-quarantine; and the full gateway 
 - In-memory single-process state (cache, buckets, meters, shadow diffs) — correct semantics, but
   per-replica only; cross-replica correctness needs the store seams filled.
 - Streaming path disables retry/hedge (partial outputs can't be replayed safely); a true
-  streaming hedge would need idempotent upstreams or output-diffing.
+  streaming hedge would need idempotent upstreams or output-diffing. The tool-firewall
+  auto-inspect and PII round-trip likewise apply to the non-streaming path only.
+- The tool firewall is pattern-based: unknown payload shapes pass (see the design note above), and
+  SSRF host checks are lexical — no DNS resolution.
+- PII detection is heuristic (regex + Luhn + honorific/name lists): it catches common shapes, not
+  every jurisdiction's PII definition; token consistency is bounded by the store's LRU window.
 - DocHealer's docs parser expects `METHOD /path` headings and backticked params — a convention,
   not a universal docs format.
 - No request queuing/priority lanes, no response streaming transform policies, no audit log
@@ -275,6 +382,9 @@ DocHealer drift → patch; health monitor auto-quarantine; and the full gateway 
 
 ## Roadmap
 
+- Single-binary Go/Rust port of the tool firewall for microsecond per-call overhead — the Python
+  path is pure-Python regex over the argument tree, and its cost is documented via the measured
+  load profile; the hot path deserves native latency.
 - Redis-backed rate-limit store + distributed cache; meter export to a billing sink.
 - Real embedding service behind the cache Protocol; embedding-versioned cache namespaces.
 - Trained complexity classifier replacing the heuristic (same interface).
